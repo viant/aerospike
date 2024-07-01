@@ -1,6 +1,20 @@
 package aerospike
 
-import "database/sql/driver"
+import (
+	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	as "github.com/aerospike/aerospike-client-go"
+	"github.com/viant/x"
+)
+
+const (
+	scheme = "aerospike"
+)
+
+func init() {
+	sql.Register(scheme, &Driver{})
+}
 
 // Driver is exported to make the driver directly accessible.
 // In general the driver is used via the database/sql package.
@@ -10,13 +24,28 @@ type Driver struct{}
 // See https://github.com/viant/aerospike#dsn-data-source-name for how
 // the DSN string is formatted
 func (d Driver) Open(dsn string) (driver.Conn, error) {
-	//cfg, err := ParseDSN(dsn)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//c := &connector{
-	//	cfg: cfg,
-	//}
-	//return c.Connect(context.Background())
-	return nil, nil
+	if dsn == "" {
+		return nil, fmt.Errorf("aerospike dsn was empty")
+	}
+
+	cfg, err := ParseDSN(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := as.NewClient(cfg.Host, cfg.Port) //TODO
+	if err != nil {
+		return nil, err
+	}
+	/*
+		client, err := as.NewClientWithPolicy(cfg.ClientPolicy, cfg.Host, cfg.Port)
+		if err != nil {
+			return nil, err
+		}
+	*/
+	return &connection{
+		cfg:    cfg,
+		client: client,
+		types:  x.NewRegistry(),
+	}, nil
 }
