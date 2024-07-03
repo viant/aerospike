@@ -1,4 +1,4 @@
-package aerospike
+package sql
 
 import (
 	"context"
@@ -20,27 +20,17 @@ func Test_ExecContext(t *testing.T) {
 		params      []interface{}
 		expect      interface{}
 	}{
-		//{
-		//	description: "register inlined set",
-		//	dsn:         "aerospike://127.0.0.1:3000",
-		//	sql:         "REGISTER SET Bar AS struct{id int; name string}",
-		//},
+		{
+			description: "register inlined set",
+			dsn:         "aerospike://127.0.0.1:3000/test",
+			sql:         "REGISTER SET Bar AS struct{id int; name string}",
+		},
 		{
 			description: "register named set",
-			dsn:         "aerospike://127.0.0.1:3000",
+			dsn:         "aerospike://127.0.0.1:3000/test",
 			sql:         "REGISTER SET Foo AS ?",
 			params:      []interface{}{Foo{}},
 		},
-		/*
-			SELECT * FROM Foo$ WHERE id = 1
-			SELECT * FROM Foo$Bin WHERE id = 'PK'
-			SELECT * FROM Foo$MapBin WHERE id = 'PK'
-			SELECT * FROM Foo$MapBin WHERE id = 'value'
-			SELECT * FROM Foo$MapBin WHERE PK = 'value' AND KEY = 'key1'
-
-			SELECT * FROM Foo, UNNES(Foo.MapBin) WHERE PK = 'value' AND KEY = 'key1'
-			SELECT PK.Bins.* FROM Foo$MapBin Bins WHERE PK = 'value' AND KEY = 'key1
-		*/
 	}
 
 	for _, tc := range testCase {
@@ -56,6 +46,18 @@ func Test_ExecContext(t *testing.T) {
 	}
 }
 
+// ID or PK option for that
+/*
+	SELECT * FROM Foo$ WHERE PK = 1
+	SELECT * FROM Foo$Bin WHERE PK = 'PK'
+	SELECT * FROM Foo$MapBin WHERE PK = 'PK'
+	SELECT * FROM Foo$MapBin WHERE PK = 'value'
+	SELECT * FROM Foo$MapBin WHERE PK = 'value' AND KEY = 'key1'
+
+	SELECT * FROM Foo, UNNEST(Foo.MapBin) WHERE PK = 'value' AND KEY = 'key1'
+	SELECT PK.Bins.* FROM Foo$MapBin Bins WHERE PK = 'value' AND KEY = 'key1
+*/
+
 func Test_QueryContext(t *testing.T) {
 
 	type Foo struct {
@@ -69,24 +71,26 @@ func Test_QueryContext(t *testing.T) {
 		execParams  []interface{}
 		querySQL    string
 		queryParams []interface{}
-		expect      interface{}
-		scanner     func(r *sql.Rows) (interface{}, error)
+
+		expect  interface{}
+		scanner func(r *sql.Rows) (interface{}, error)
 	}{
 		{
 			description: "register named type",
-			dsn:         "aerospike:///testdata/",
-			execSQL:     "REGISTER TYPE Foo AS ?",
+			dsn:         "aerospike://127.0.0.1:3000/test?params",
+			// * 'bigquery://projectID/[location/]datasetID?queryString'
+			execSQL:     "REGISTER SET Foo AS ?",
 			execParams:  []interface{}{Foo{}},
-			querySQL:    "SELECT * FROM Foo",
-			queryParams: []interface{}{},
+			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
+			queryParams: []interface{}{"foo1"},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				foo := Foo{}
 				err := r.Scan(&foo.Id, &foo.Name)
 				return &foo, err
 			},
 			expect: []interface{}{
-				&Foo{Id: 1, Name: "name1"},
-				&Foo{Id: 2, Name: "name2"},
+				&Foo{Id: 1, Name: "foo1"},
+				//&Foo{Id: 2, Name: "name2"},
 			},
 		},
 		//{
@@ -137,7 +141,9 @@ func Test_QueryContext(t *testing.T) {
 			}
 
 			rows, err := db.QueryContext(context.Background(), tc.querySQL, tc.queryParams...)
-			assert.Nil(t, err, tc.description)
+			if !assert.Nil(t, err, tc.description) {
+				return
+			}
 			assert.NotNil(t, rows, tc.description)
 			var items []interface{}
 			for rows.Next() {

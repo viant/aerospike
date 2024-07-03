@@ -1,4 +1,4 @@
-package aerospike
+package sql
 
 type tx struct {
 	*connection

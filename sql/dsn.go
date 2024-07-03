@@ -1,4 +1,4 @@
-package aerospike
+package sql
 
 import (
 	"fmt"
@@ -12,8 +12,10 @@ import (
 type Config struct {
 	Host         string
 	Port         int
+	Namespace    string
 	ClientPolicy *as.ClientPolicy
-
+	url.Values
+	// expiry options
 	/*
 		Key     string
 		Secret  string
@@ -34,30 +36,39 @@ func ParseDSN(dsn string) (*Config, error) {
 		return nil, fmt.Errorf("invalid dsn scheme, expected %v, but had: %v", scheme, URL.Scheme)
 	}
 
-	cfg := &Config{}
-
-	splitted := strings.Split(URL.Host, ":")
-
-	if len(splitted) != 2 {
-		return nil, fmt.Errorf("invalid dsn - expected format: host:port")
-	}
-
-	host := splitted[0]
-	if host != "" {
-		//if !strings.Contains(host, "://") {
-		//	host = "http://" + host
-		//}
-		cfg.Host = host
+	host := URL.Hostname()
+	if len(host) == 0 {
+		return nil, fmt.Errorf("invalid dsn - missing host")
 	}
 
 	port := URL.Port()
-	aPort, err := strconv.Atoi(port)
+	if len(port) == 0 {
+		return nil, fmt.Errorf("invalid dsn - missing port")
+	}
+
+	iPort, err := strconv.Atoi(port)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse dsn port due to: %w", err)
 	}
-	cfg.Port = aPort
 
-	cfg.ClientPolicy = as.NewClientPolicy() //TODO: populate client policy
+	namespace := strings.Trim(URL.Path, "/")
+	if len(namespace) == 0 {
+		return nil, fmt.Errorf("invalid dsn - missing namespace")
+	}
+
+	cfg := &Config{
+		Host:         host,
+		Port:         iPort,
+		Namespace:    namespace,
+		ClientPolicy: as.NewClientPolicy(), //TODO
+		Values:       URL.Query(),          //TODO
+	}
+
+	//if len(cfg.Values) > 0 { //TODO
+	//	if _, ok := cfg.Values[endpoint]; ok {
+	//		cfg.Endpoint = cfg.Values.Get(endpoint)
+	//	}
+	//}
 
 	return cfg, nil
 }

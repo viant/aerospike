@@ -1,4 +1,4 @@
-package aerospike
+package sql
 
 import (
 	"errors"
@@ -10,12 +10,12 @@ type result struct {
 	totalRows int64
 }
 
-//LastInsertId returns not supported error
+// LastInsertId returns not supported error
 func (r *result) LastInsertId() (int64, error) {
 	return 0, errLastInsertID
 }
 
-//RowsAffected return affected rows
+// RowsAffected return affected rows
 func (r *result) RowsAffected() (int64, error) {
 	return r.totalRows, nil
 }

@@ -1,4 +1,4 @@
-package aerospike
+package sql
 
 import "github.com/viant/x"
 

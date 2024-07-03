@@ -1,4 +1,4 @@
-package aerospike
+package sql
 
 import (
 	"context"
@@ -28,14 +28,21 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 	}
 
 	c.types.Merge(globalTypes)
-	stmt := &Statement{SQL: SQL, Kind: kind, types: c.types, client: c.client}
+	stmt := &Statement{
+		SQL:       SQL,
+		Kind:      kind,
+		types:     c.types,
+		client:    c.client,
+		cfg:       c.cfg,
+		namespace: c.cfg.Namespace,
+	}
 	stmt.checkQueryParameters()
 
-	//if kind.IsSelect() {
-	//	if err := stmt.prepareSelect(SQL); err != nil {
-	//		return nil, err
-	//	}
-	//}
+	if kind.IsSelect() {
+		if err := stmt.prepareSelect(SQL); err != nil {
+			return nil, err
+		}
+	}
 	return stmt, nil
 }
 
