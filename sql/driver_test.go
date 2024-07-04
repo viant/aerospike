@@ -4,12 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go"
+	as "github.com/aerospike/aerospike-client-go/v4"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
 func Test_ExecContext(t *testing.T) {
+	namespace := "udb"
 
 	type Foo struct {
 		Id   int //`aql:"id,key=true"
@@ -24,12 +25,12 @@ func Test_ExecContext(t *testing.T) {
 	}{
 		{
 			description: "register inlined set",
-			dsn:         "aerospike://127.0.0.1:3000/test",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			sql:         "REGISTER SET Bar AS struct{id int; name string}",
 		},
 		{
 			description: "register named set",
-			dsn:         "aerospike://127.0.0.1:3000/test",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			sql:         "REGISTER SET Foo AS ?",
 			params:      []interface{}{Foo{}},
 		},
@@ -67,6 +68,7 @@ type entry struct {
 }
 
 func Test_QueryContext(t *testing.T) {
+	namespace := "udb"
 
 	type Foo struct {
 		Id   int //`aql:"id,key=true"
@@ -86,7 +88,7 @@ func Test_QueryContext(t *testing.T) {
 	}{
 		{
 			description: "get 1 records by PK",
-			dsn:         "aerospike://127.0.0.1:3000/test",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			// * 'bigquery://projectID/[location/]datasetID?queryString' //TODO params
 			execSQL:     "REGISTER SET Foo AS ?",
 			execParams:  []interface{}{Foo{}},
@@ -104,7 +106,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 0 records by PK",
-			dsn:         "aerospike://127.0.0.1:3000/test",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "REGISTER SET Foo AS ?",
 			execParams:  []interface{}{Foo{}},
 			querySQL:    "SELECT * FROM Foo WHERE PK = ?",

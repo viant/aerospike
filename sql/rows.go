@@ -3,7 +3,7 @@ package sql
 import (
 	"database/sql/driver"
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go"
+	as "github.com/aerospike/aerospike-client-go/v4"
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/structology"
 	"github.com/viant/xunsafe"
