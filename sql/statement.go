@@ -170,10 +170,6 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		//}
 	}
 
-	//criteria := ""
-	//if s.query.Qualify != nil && s.query.Qualify.X != nil {
-	//	criteria = sqlparser.Stringify(s.query.Qualify.X)
-	//}
 	aMapper, err := newMapper(s.recordType, s.query.List)
 	if err != nil {
 		return nil, err
