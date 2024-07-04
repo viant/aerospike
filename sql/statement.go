@@ -155,7 +155,6 @@ func (s *Statement) prepareSelect(SQL string) error {
 	if s.query, err = sqlparser.ParseQuery(SQL); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -227,22 +226,32 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 }
 
 func (s *Statement) updateCriteria(err error, args []driver.NamedValue) error {
-	if qualify := s.query.Qualify; qualify != nil {
-		switch actual := qualify.X.(type) {
-		case *expr.Binary:
-			switch strings.ToLower(actual.Op) {
-			case "=", "in":
-			default:
-				return fmt.Errorf("unsupported qualify operator: %v", actual.Op)
-			}
 
-			ident := extractColumn(actual)
-			switch strings.ToLower(ident) {
-			case "pk", "key":
-				if s.pkValues, err = extractColumnValue(actual, args); err != nil {
-					return err
-				}
+	if qualify := s.query.Qualify; qualify != nil {
+		binary, ok := qualify.X.(*expr.Binary)
+		if !ok {
+			return fmt.Errorf("unsupported expr type: %T", qualify.X)
+		}
+		err := binary.Walk(func(ident node.Node, values expr.Values, operator, parentOperator string) error {
+			if parentOperator != "" && strings.ToUpper(parentOperator) != "AND" {
+				return fmt.Errorf("unuspported logical operator: %s", parentOperator)
 			}
+			name := strings.ToLower(sqlparser.Stringify(ident))
+			var exprValues = values.Values(func(idx int) interface{} {
+				return args[idx].Value
+			})
+			switch name {
+			case "pk":
+				s.pkValues = exprValues
+			case "key":
+				s.keyValues = exprValues
+			default:
+				return fmt.Errorf("unuppred criteria column: %s", name)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 	return err
