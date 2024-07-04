@@ -183,6 +183,8 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		mapper:     aMapper,
 		query:      s.query,
 	}
+	defer close(rows.recordset.Records)
+
 	if err := s.updateCriteria(err, args); err != nil {
 		return nil, err
 	}
@@ -209,7 +211,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			return nil, err
 		}
 		rows.recordset.Records <- record
-		close(rows.recordset.Records)
+		//close(rows.recordset.Records)
 	default:
 		recordset, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		if err != nil {
@@ -221,7 +223,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		for i := range recordset {
 			rows.recordset.Records <- recordset[i]
 		}
-		close(rows.recordset.Records)
+		//close(rows.recordset.Records)
 	}
 	return rows, nil
 }
@@ -252,7 +254,25 @@ func (s *Statement) updateCriteria(err error, args []driver.NamedValue) error {
 					if len(exprValues) != 2 {
 						return fmt.Errorf("invalid criteria values")
 					}
-					s.filter = as.NewRangeFilter(name, exprValues[0].AsInt(), exprValues[1].AsInt())
+					exprVal0, ok := exprValues[0].(expr.Value)
+					if !ok {
+						return fmt.Errorf("invalid criteria type expected %T but had %T", expr.Value{}, exprValues[0])
+					}
+					exprVal1, ok := exprValues[1].(expr.Value)
+					if !ok {
+						return fmt.Errorf("invalid criteria type expected %T but had %T", expr.Value{}, exprValues[1])
+					}
+
+					from, ok := exprVal0.AsInt()
+					if !ok {
+						return fmt.Errorf("unable to get int value from criteria value %v", exprVal0)
+					}
+					to, ok := exprVal1.AsInt()
+					if !ok {
+						return fmt.Errorf("unable to get int value from criteria value %v", exprVal1)
+					}
+
+					s.filter = as.NewRangeFilter(name, int64(from), int64(to))
 					//Filter add range operator
 				case "like":
 					//contain
