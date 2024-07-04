@@ -15,7 +15,6 @@ import (
 	"github.com/viant/xreflect"
 	"github.com/viant/xunsafe"
 	"reflect"
-	"strconv"
 	"strings"
 	"unsafe"
 )
@@ -29,6 +28,7 @@ type Statement struct {
 	Kind       sqlparser.Kind
 	types      *x.Registry
 	query      *query.Select
+	filter     *as.Filter
 	recordType reflect.Type
 	//mapper     map[int]int
 	numInput  int
@@ -178,15 +178,14 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	rows := &Rows{
 		zeroRecord: unsafe.Slice((*byte)(xunsafe.AsPointer(row)), s.recordType.Size()),
 		record:     row,
+		recordset:  &as.Recordset{Records: make(chan *as.Record, 1)},
 		recordType: s.recordType,
 		mapper:     aMapper,
 		query:      s.query,
 	}
-
 	if err := s.updateCriteria(err, args); err != nil {
 		return nil, err
 	}
-
 	keys, err := s.buildKeys()
 	if err != nil {
 		return nil, err
@@ -194,7 +193,13 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 
 	switch len(keys) {
 	case 0:
-		return nil, fmt.Errorf("unsupported scaning")
+		if s.query.Qualify != nil {
+
+			//use query call
+		} else {
+			//
+			//use scan call
+		}
 	case 1:
 		record, err := s.client.Get(as.NewPolicy(), keys[0])
 		if err != nil {
@@ -203,25 +208,21 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 			return nil, err
 		}
-		rows.records = append(rows.records, record)
+		rows.recordset.Records <- record
+		close(rows.recordset.Records)
 	default:
-		rows.records, err = s.client.BatchGet(as.NewBatchPolicy(), keys)
+		recordset, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		if err != nil {
+			if IsKeyNotFound(err) {
+				return rows, nil
+			}
 			return nil, err
 		}
+		for i := range recordset {
+			rows.recordset.Records <- recordset[i]
+		}
+		close(rows.recordset.Records)
 	}
-
-	//s.client.BatchGet(nil, []*as.Key{key}) // TODO
-
-	// s.client.Query(nil, nil, nil) // TODO needs secondary index ?
-
-	//
-	//if criteria != "" {
-	//	if err = rows.initCriteria(s.query.Qualify, args); err != nil {
-	//		return nil, err
-	//	}
-	//}
-
 	return rows, nil
 }
 
@@ -246,7 +247,19 @@ func (s *Statement) updateCriteria(err error, args []driver.NamedValue) error {
 			case "key":
 				s.keyValues = exprValues
 			default:
-				return fmt.Errorf("unuppred criteria column: %s", name)
+				switch strings.ToLower(operator) {
+				case "between":
+					if len(exprValues) != 2 {
+						return fmt.Errorf("invalid criteria values")
+					}
+					s.filter = as.NewRangeFilter(name, exprValues[0].AsInt(), exprValues[1].AsInt())
+					//Filter add range operator
+				case "like":
+					//contain
+				case "=":
+					//equal criteri
+				}
+				//you may still use aerospike query with index
 			}
 			return nil
 		})
@@ -267,71 +280,6 @@ func (s *Statement) buildKeys() ([]*as.Key, error) {
 		result[i] = key
 	}
 	return result, nil
-}
-
-func extractColumnValue(binary *expr.Binary, args []driver.NamedValue) ([]interface{}, error) {
-
-	value := extractValue(binary.X)
-	if value == nil {
-		value = extractValue(binary.Y)
-	}
-	switch actual := value.(type) {
-	case *expr.Placeholder:
-		return []interface{}{args[0].Value}, nil
-	case *expr.Literal:
-		switch actual.Kind {
-		case "int":
-			v, err := strconv.Atoi(actual.Value)
-			if err != nil {
-				return nil, err
-			}
-			return []interface{}{v}, nil
-		case "null":
-			return []interface{}{nil}, nil
-		case "string":
-			return []interface{}{strings.Trim(actual.Value, "'")}, nil
-		case "numeric":
-			v, err := strconv.ParseFloat(actual.Value, 64)
-			if err != nil {
-				return nil, err
-			}
-			return []interface{}{v}, nil
-
-		}
-		return []interface{}{actual.Value}, nil
-		//	case *expr.Parenthesis:
-	}
-	return nil, fmt.Errorf("not yet supported")
-}
-
-func extractColumn(binary *expr.Binary) string {
-	if name := extractName(binary.X); name != "" {
-		return name
-	}
-	return extractName(binary.Y)
-}
-
-func extractName(n node.Node) string {
-	if ret, ok := n.(*expr.Selector); ok {
-		return sqlparser.Stringify(ret)
-	}
-	if ret, ok := n.(*expr.Ident); ok {
-		return ret.Name
-	}
-	return ""
-}
-
-func extractValue(n node.Node) node.Node {
-	if ret, ok := n.(*expr.Placeholder); ok {
-		return ret
-	}
-	if ret, ok := n.(*expr.Parenthesis); ok {
-		return ret
-	}
-	if ret, ok := n.(*expr.Literal); ok {
-		return ret
-	}
-	return nil
 }
 
 // IsKeyNotFound returns true if key not found error.

@@ -18,8 +18,7 @@ type Rows struct {
 	query         *query.Select
 	zeroRecord    []byte
 	record        interface{}
-	records       []*as.Record
-	recordIndex   int
+	recordset     *as.Recordset
 	processedRows uint64
 }
 
@@ -42,18 +41,17 @@ func (r *Rows) Close() error {
 
 // Next moves to next row
 func (r *Rows) Next(dest []driver.Value) error {
-	if r.recordIndex >= len(r.records) {
+	record, ok := <-r.recordset.Records
+	if !ok {
 		return io.EOF
 	}
-	record := r.records[r.recordIndex]
-	r.recordIndex++
 	//reset record with nil, or 0 values
 	copy(unsafe.Slice((*byte)(xunsafe.AsPointer(r.record)), r.recordType.Size()), r.zeroRecord)
 	ptr := xunsafe.AsPointer(r.record)
 	if err := r.transferBinValues(dest, record, ptr); err != nil {
 		return err
 	}
-	r.processedRows++ //TODO
+	r.processedRows++
 	return nil
 }
 

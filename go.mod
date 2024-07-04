@@ -7,7 +7,7 @@ toolchain go1.21.11
 require (
 	github.com/aerospike/aerospike-client-go v4.5.2+incompatible
 	github.com/stretchr/testify v1.9.0
-	github.com/viant/sqlparser v0.7.1-0.20240704145858-dc0a21f3e29b
+	github.com/viant/sqlparser v0.7.1-0.20240704151933-17010498d5d8
 	github.com/viant/tagly v0.2.0
 	github.com/viant/x v0.3.0
 	github.com/viant/xreflect v0.6.2
