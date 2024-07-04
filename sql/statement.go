@@ -3,8 +3,10 @@ package sql
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go"
+	"github.com/aerospike/aerospike-client-go/types"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
 	"github.com/viant/sqlparser/node"
@@ -201,6 +203,9 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	case 1:
 		record, err := s.client.Get(as.NewPolicy(), keys[0])
 		if err != nil {
+			if IsKeyNotFound(err) {
+				return rows, nil
+			}
 			return nil, err
 		}
 		rows.records = append(rows.records, record)
@@ -322,4 +327,23 @@ func extractValue(n node.Node) node.Node {
 		return ret
 	}
 	return nil
+}
+
+// IsKeyNotFound returns true if key not found error.
+func IsKeyNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	aeroError, ok := err.(types.AerospikeError)
+	if !ok {
+		err = errors.Unwrap(err)
+		if err == nil {
+			return false
+		}
+		if aeroError, ok = err.(types.AerospikeError); !ok {
+			return false
+		}
+
+	}
+	return aeroError.ResultCode() == types.KEY_NOT_FOUND_ERROR
 }

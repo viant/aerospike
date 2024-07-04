@@ -20,10 +20,10 @@ require (
 	github.com/onsi/gomega v1.27.8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/viant/parsly v0.3.2-0.20231120160314-11ec855ce00a // indirect
+	github.com/viant/structology v0.5.6-0.20240703221418-965d2a848bd0 // indirect
 	github.com/viant/toolbox v0.34.6-0.20221112031702-3e7cdde7f888 // indirect
 	github.com/yuin/gopher-lua v1.1.0 // indirect
 	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-

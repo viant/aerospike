@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/viant/sqlparser/expr"
 	"github.com/viant/sqlparser/query"
+	"github.com/viant/structology"
 	"github.com/viant/xunsafe"
 	"reflect"
 	"strings"
@@ -11,7 +12,8 @@ import (
 
 type (
 	field struct {
-		tag *Tag
+		tag    *Tag
+		setter structology.Setter
 		*xunsafe.Field
 		index int
 	}

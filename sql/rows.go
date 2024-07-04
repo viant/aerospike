@@ -2,9 +2,11 @@ package sql
 
 import (
 	"database/sql/driver"
+	"fmt"
 	as "github.com/aerospike/aerospike-client-go"
 	"github.com/viant/sqlparser/expr"
 	"github.com/viant/sqlparser/query"
+	"github.com/viant/structology"
 	"github.com/viant/xunsafe"
 	"io"
 	"reflect"
@@ -72,7 +74,20 @@ func (r *Rows) Next(dest []driver.Value) error {
 		if !ok {
 			continue
 		}
-		aField.Set(ptr, value)
+		srcType := reflect.TypeOf(value)
+		if srcType.AssignableTo(aField.Type) {
+			aField.Set(ptr, value)
+		} else {
+			if aField.setter == nil {
+				aField.setter = structology.LookupSetter(srcType, aField.Type)
+			}
+			if aField.setter == nil {
+				return fmt.Errorf("failed to find setter for %v", aField.Type)
+			}
+			if err := aField.setter(value, aField.Field, xunsafe.AsPointer(value)); err != nil {
+				return err
+			}
+		}
 		dest[i] = aField.Value(ptr)
 	}
 	r.processedRows++ //TODO

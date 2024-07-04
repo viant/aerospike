@@ -77,7 +77,7 @@ func Test_QueryContext(t *testing.T) {
 	}{
 		{
 			description: "register named type",
-			dsn:         "aerospike://127.0.0.1:3000/test?params",
+			dsn:         "aerospike://127.0.0.1:3000/test",
 			// * 'bigquery://projectID/[location/]datasetID?queryString'
 			execSQL:     "REGISTER SET Foo AS ?",
 			execParams:  []interface{}{Foo{}},
