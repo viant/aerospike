@@ -92,8 +92,8 @@ func (s *Statement) Close() error {
 func (s *Statement) checkQueryParameters() {
 	//this is very basic parameter detection, need to be improved
 	// TODO
-	query := strings.ToLower(s.SQL)
-	count := checkQueryParameters(query)
+	aQuery := strings.ToLower(s.SQL)
+	count := checkQueryParameters(aQuery)
 	s.numInput = count
 }
 
@@ -163,10 +163,8 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	//var err error
 	if aType := s.types.Lookup(s.set); aType != nil {
 		s.recordType = aType.Type
-	} else { //TODO
-		//if s.recordType, err = s.autodetectType(ctx, resources); err != nil {
-		//	return nil, err
-		//}
+	} else {
+		return nil, fmt.Errorf("executeselect: unable to lookup type with name %s", s.set)
 	}
 
 	aMapper, err := newMapper(s.recordType, s.query.List)
@@ -203,7 +201,19 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			//use scan call
 		}
 	case 1:
-		record, err := s.client.Get(as.NewPolicy(), keys[0])
+
+		var record *as.Record
+		bins := make([]string, len(aMapper.fields))
+		for i, field := range aMapper.fields {
+			bins[i] = field.Name
+		}
+
+		if s.query.List.IsStarExpr() {
+			record, err = s.client.Get(as.NewPolicy(), keys[0])
+		} else {
+			record, err = s.client.Get(as.NewPolicy(), keys[0], bins...)
+		}
+
 		if err != nil {
 			if IsKeyNotFound(err) {
 				return rows, nil

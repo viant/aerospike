@@ -2,6 +2,7 @@ package sql
 
 import (
 	"fmt"
+	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/structology"
@@ -66,19 +67,26 @@ func newMapper(recordType reflect.Type, list query.List) (*mapper, error) {
 		item := list[i]
 
 		switch actual := item.Expr.(type) {
-		case *expr.Ident:
-			pos, ok := m.byName[actual.Name]
-			fuzzName := strings.ReplaceAll(strings.ToLower(actual.Name), "_", "")
+		case *expr.Ident, *expr.Selector:
+			name := sqlparser.Stringify(actual)
+			if index := strings.LastIndex(name, "."); index != -1 {
+				name = name[index+1:]
+			}
+
+			pos, ok := m.byName[name]
+			fuzzName := strings.ReplaceAll(strings.ToLower(name), "_", "")
 			if !ok {
 				pos, ok = m.byName[fuzzName]
 			}
 			if !ok {
-				return nil, fmt.Errorf("unable to match column: %v in type: %s", actual.Name, recordType.Name())
+				return nil, fmt.Errorf("unable to match column: %v in type: %s", name, recordType.Name())
 			}
 			idx := len(listMapper.fields)
 			listMapper.fields = append(listMapper.fields, m.fields[pos])
-			listMapper.byName[actual.Name] = idx
+			listMapper.byName[name] = idx
 			listMapper.byName[fuzzName] = idx
+		default:
+			return nil, fmt.Errorf("newmapper: unsupported expression type: %T", actual)
 		}
 	}
 	return listMapper, nil

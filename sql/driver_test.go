@@ -75,6 +75,11 @@ func Test_QueryContext(t *testing.T) {
 		Name string
 	}
 
+	type Bar struct {
+		Name string
+		Age  int
+	}
+
 	var testCases = []struct {
 		description string
 		dsn         string
@@ -87,11 +92,9 @@ func Test_QueryContext(t *testing.T) {
 		testData    []*entry
 	}{
 		{
-			description: "get 1 records by PK",
+			description: "get 1 record with all bins by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			// * 'bigquery://projectID/[location/]datasetID?queryString' //TODO params
-			execSQL:     "REGISTER SET Foo AS ?",
-			execParams:  []interface{}{Foo{}},
+			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
 			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
 			queryParams: []interface{}{"1"},
 			testData:    []*entry{{pk: "1", set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}}},
@@ -119,22 +122,39 @@ func Test_QueryContext(t *testing.T) {
 				return &foo, err
 			},
 		},
-		//{
-		//	description: "register named type",
-		//	dsn:         "aerospike:///testdata/",
-		//	execSQL:     "REGISTER TYPE Foo AS ?",
-		//	execParams:  []interface{}{Foo{}},
-		//	querySQL:    "SELECT * FROM Foo WHERE id=2",
-		//	queryParams: []interface{}{},
-		//	scanner: func(r *sql.Rows) (interface{}, error) {
-		//		foo := Foo{}
-		//		err := r.Scan(&foo.Id, &foo.Name)
-		//		return &foo, err
-		//	},
-		//	expect: []interface{}{
-		//		&Foo{Id: 2, Name: "name2"},
-		//	},
-		//},
+		{
+			description: "get 1 record with all listed bins by PK",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
+			querySQL:    "SELECT Foo.Id, Foo.Name FROM Foo WHERE PK = ?",
+			queryParams: []interface{}{"1"},
+			testData:    []*entry{{pk: "1", set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}}},
+			expect: []interface{}{
+				&Foo{Id: 1, Name: "foo1"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := Foo{}
+				err := r.Scan(&foo.Id, &foo.Name)
+				return &foo, err
+			},
+		},
+		{
+			description: "get 1 record with chosen bins by PK",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "REGISTER SET Bar AS ?",
+			execParams:  []interface{}{Bar{}},
+			querySQL:    "SELECT Bar.Name, Bar.Age FROM Bar WHERE PK = ?",
+			queryParams: []interface{}{"1"},
+			testData:    []*entry{{pk: "1", set: "Bar", binMap: as.BinMap{"Id": 1, "Name": "bar1", "Age": 20}}},
+			expect: []interface{}{
+				&Bar{Name: "bar1", Age: 20},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := Bar{}
+				err := r.Scan(&bar.Name, &bar.Age)
+				return &bar, err
+			},
+		},
 		//{
 		//	description: "register named type",
 		//	dsn:         "aerospike:///testdata/",
@@ -155,7 +175,9 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		//for _, tc := range testCases[0:1] {
 		//for _, tc := range testCases[1:2] {
+		//	for _, tc := range testCases[2:3] {
 		t.Run(tc.description, func(t *testing.T) {
 			err := prepareTestData(tc.dsn, tc.testData)
 			if !assert.Nil(t, err, tc.description) {
