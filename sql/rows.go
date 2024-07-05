@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v4"
+	"github.com/aerospike/aerospike-client-go/v4/types"
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/structology"
 	"github.com/viant/xunsafe"
@@ -18,7 +19,7 @@ type Rows struct {
 	query         *query.Select
 	zeroRecord    []byte
 	record        interface{}
-	recordset     *as.Recordset
+	rowsReader    rowsIterator
 	processedRows uint64
 }
 
@@ -41,10 +42,14 @@ func (r *Rows) Close() error {
 
 // Next moves to next row
 func (r *Rows) Next(dest []driver.Value) error {
-	record, ok := <-r.recordset.Records
-	if !ok {
+	record, err := r.rowsReader.Read()
+	if err == types.ErrRecordsetClosed {
 		return io.EOF
 	}
+	if err != nil {
+		return err
+	}
+
 	//reset record with nil, or 0 values
 	copy(unsafe.Slice((*byte)(xunsafe.AsPointer(r.record)), r.recordType.Size()), r.zeroRecord)
 	ptr := xunsafe.AsPointer(r.record)

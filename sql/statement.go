@@ -87,7 +87,6 @@ func (s *Statement) Close() error {
 	return nil
 }
 
-// //////////
 // /////////
 func (s *Statement) checkQueryParameters() {
 	//this is very basic parameter detection, need to be improved
@@ -158,7 +157,6 @@ func (s *Statement) prepareSelect(SQL string) error {
 	return nil
 }
 
-// ///
 func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	//var err error
 	if aType := s.types.Lookup(s.set); aType != nil {
@@ -176,12 +174,10 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	rows := &Rows{
 		zeroRecord: unsafe.Slice((*byte)(xunsafe.AsPointer(row)), s.recordType.Size()),
 		record:     row,
-		recordset:  &as.Recordset{Records: make(chan *as.Record, 1)},
 		recordType: s.recordType,
 		mapper:     aMapper,
 		query:      s.query,
 	}
-	defer close(rows.recordset.Records)
 
 	if err := s.updateCriteria(err, args); err != nil {
 		return nil, err
@@ -194,11 +190,12 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	switch len(keys) {
 	case 0:
 		if s.query.Qualify != nil {
-
 			//use query call
 		} else {
-			//
-			//use scan call
+			rows.rowsReader, err = s.client.ScanAll(as.NewScanPolicy(), s.namespace, s.set)
+			if err != nil {
+				return nil, fmt.Errorf("executeselect: unable to scan set %s due to %w", s.set, err)
+			}
 		}
 	case 1:
 
@@ -216,24 +213,29 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 
 		if err != nil {
 			if IsKeyNotFound(err) {
+				rows.rowsReader = newRowsReader([]*as.Record{})
 				return rows, nil
 			}
 			return nil, err
 		}
-		rows.recordset.Records <- record
-		//close(rows.recordset.Records)
+
+		rows.rowsReader = newRowsReader([]*as.Record{record})
 	default:
-		recordset, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
+		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
+		results := make([]*as.Record, 0)
+		for i, _ := range records {
+			if records[i] != nil {
+				results = append(results, records[i])
+			}
+		}
+
+		rows.rowsReader = newRowsReader(results)
 		if err != nil {
 			if IsKeyNotFound(err) {
 				return rows, nil
 			}
 			return nil, err
 		}
-		for i := range recordset {
-			rows.recordset.Records <- recordset[i]
-		}
-		//close(rows.recordset.Records)
 	}
 	return rows, nil
 }
