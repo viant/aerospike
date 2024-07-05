@@ -6,6 +6,7 @@ import (
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v4"
 	"github.com/stretchr/testify/assert"
+	"sort"
 	"testing"
 )
 
@@ -214,6 +215,52 @@ func Test_QueryContext(t *testing.T) {
 				return &foo, err
 			},
 		},
+		{
+			description: "scan all - more than 0 records found",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "REGISTER SET Foo AS ?",
+			execParams:  []interface{}{Foo{}},
+			querySQL:    "SELECT * FROM Foo",
+			queryParams: []interface{}{},
+			testData: []*entry{
+				{pk: 1, set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}},
+				{pk: 2, set: "Foo", binMap: as.BinMap{"Id": 2, "Name": "foo2"}},
+				{pk: 3, set: "Foo", binMap: as.BinMap{"Id": 3, "Name": "foo3"}},
+			},
+			expect: []interface{}{
+				&Foo{Id: 1, Name: "foo1"},
+				&Foo{Id: 2, Name: "foo2"},
+				&Foo{Id: 3, Name: "foo3"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := Foo{}
+				err := r.Scan(&foo.Id, &foo.Name)
+				return &foo, err
+			},
+		},
+		{
+			description: "scan all - no records found",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "REGISTER SET Foo AS ?",
+			execParams:  []interface{}{Foo{}},
+			querySQL:    "SELECT * FROM Foo",
+			queryParams: []interface{}{},
+			testData: []*entry{
+				{pk: 0, set: "Foo", binMap: nil},
+				//{pk: 1, set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}},
+				//{pk: 2, set: "Foo", binMap: as.BinMap{"Id": 2, "Name": "foo2"}},
+				//{pk: 3, set: "Foo", binMap: as.BinMap{"Id": 3, "Name": "foo3"}},
+			},
+			expect: []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := Foo{}
+				err := r.Scan(&foo.Id, &foo.Name)
+				return &foo, err
+			},
+		},
+
+		// TODO scan read
+		// TODO check select * from foo where boo registered
 	}
 
 	for _, tc := range testCases {
@@ -248,6 +295,9 @@ func Test_QueryContext(t *testing.T) {
 				assert.Nil(t, err, tc.description)
 				items = append(items, item)
 			}
+			sort.Slice(items, func(i, j int) bool {
+				return fmt.Sprintf("%v", items[i]) < fmt.Sprintf("%v", items[j])
+			})
 			assert.Equal(t, tc.expect, items, tc.description)
 		})
 	}
@@ -273,19 +323,22 @@ func prepareTestData(dsn string, testData []*entry) error {
 	for set := range sets {
 		err = client.Truncate(nil, cfg.Namespace, set, nil)
 		if err != nil {
-			return fmt.Errorf("failed to truncate set: %v", err)
+			return fmt.Errorf("failed to truncate test set: %v", err)
 		}
 	}
 
 	for _, v := range testData {
 		key, err := as.NewKey(cfg.Namespace, v.set, v.pk)
 		if err != nil {
-			return fmt.Errorf("failed to create key: %v", err)
+			return fmt.Errorf("failed to create key for test record: %v", err)
 		}
-		err = client.Put(writePolicy, key, v.binMap)
-		if err != nil {
-			return fmt.Errorf("failed to delete test record: %v", err)
+		if v.binMap != nil {
+			err = client.Put(writePolicy, key, v.binMap)
+			if err != nil {
+				return fmt.Errorf("failed to put test record: %v", err)
+			}
 		}
+
 	}
 
 	return err
