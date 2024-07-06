@@ -104,6 +104,26 @@ func Test_QueryContext(t *testing.T) {
 			description: "get 1 record with all bins by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}",
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND Key = 101",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+			},
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record with all bins by PK",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}",
 			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -121,27 +141,7 @@ func Test_QueryContext(t *testing.T) {
 				return &doc, err
 			},
 		},
-		{
-			description: "get 1 record with all bins by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}",
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND Key = 101",
-			init: []string{
-				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-			},
-			queryParams: []interface{}{1},
-			expect: []interface{}{
-				&Doc{Id: 1, Seq: 100, Name: "doc1"},
-				&Doc{Id: 1, Seq: 101, Name: "doc2"},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				doc := Doc{}
-				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
-				return &doc, err
-			},
-		},
+
 		{
 			description: "get 1 record with all bins by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,

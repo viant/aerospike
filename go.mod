@@ -8,7 +8,7 @@ require (
 	github.com/aerospike/aerospike-client-go/v4 v4.7.1
 	github.com/aerospike/aerospike-client-go/v6 v6.15.1
 	github.com/stretchr/testify v1.9.0
-	github.com/viant/sqlparser v0.7.1-0.20240706020551-a34809732b42
+	github.com/viant/sqlparser v0.7.1-0.20240706051601-af333e44c8ae
 	github.com/viant/structology v0.5.6-0.20240703221418-965d2a848bd0
 	github.com/viant/tagly v0.2.0
 	github.com/viant/x v0.3.0
