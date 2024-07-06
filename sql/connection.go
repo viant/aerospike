@@ -23,14 +23,10 @@ func (c *connection) Prepare(query string) (driver.Stmt, error) {
 // PrepareContext returns a prepared statement, bound to this connection.
 func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stmt, error) {
 	kind := sqlparser.ParseKind(SQL)
-	if !(kind.IsRegisterSet() || kind.IsSelect()) {
-		return nil, fmt.Errorf("unsupported SQL kind: %v", SQL)
-	}
-
 	c.types.Merge(globalTypes)
 	stmt := &Statement{
 		SQL:       SQL,
-		Kind:      kind,
+		kind:      kind,
 		types:     c.types,
 		client:    c.client,
 		cfg:       c.cfg,
@@ -38,11 +34,32 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 	}
 	stmt.checkQueryParameters()
 
-	if kind.IsSelect() {
+	switch kind {
+	case sqlparser.KindSelect:
 		if err := stmt.prepareSelect(SQL); err != nil {
 			return nil, err
 		}
+	case sqlparser.KindInsert:
+		if err := stmt.prepareInsert(SQL); err != nil {
+			return nil, err
+		}
+	case sqlparser.KindUpdate:
+		if err := stmt.prepareUpdate(SQL); err != nil {
+			return nil, err
+		}
+	case sqlparser.KindDelete:
+		if err := stmt.prepareDelete(SQL); err != nil {
+			return nil, err
+		}
+	case sqlparser.KindRegisterSet:
+	default:
+		return nil, fmt.Errorf("unsupported SQL kind: %v", SQL)
 	}
+
+	if err := stmt.updateSetMapper(); err != nil {
+		return nil, err
+	}
+
 	return stmt, nil
 }
 

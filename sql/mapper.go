@@ -18,26 +18,94 @@ type (
 		*xunsafe.Field
 		index int
 	}
+
 	mapper struct {
-		fields []field
-		byName map[string]int
+		fields        []field
+		collectionBin string
+		pk            *field
+		key           []*field
+		byName        map[string]int
 	}
 )
 
-func (m *mapper) lookup(name string) *xunsafe.Field {
-	pos, ok := m.byName[name]
+func (m *field) Column() string {
+	if m.tag != nil {
+		return m.tag.Name
+	}
+	return m.Field.Name
+}
+func (t *mapper) lookup(name string) *xunsafe.Field {
+	field := t.getField(name)
+	if field == nil {
+		return nil
+	}
+	return field.Field
+}
+
+func (t *mapper) getField(name string) *field {
+	pos, ok := t.byName[name]
 	if !ok {
 		name = strings.ReplaceAll(strings.ToLower(name), "_", "")
-		pos, ok = m.byName[name]
+		pos, ok = t.byName[name]
 	}
 	if !ok {
 		return nil
 	}
-	return m.fields[pos].Field
+	return &t.fields[pos]
 }
 
-func newMapper(recordType reflect.Type, list query.List) (*mapper, error) {
-	m := &mapper{fields: make([]field, 0), byName: make(map[string]int)}
+func (t *mapper) addField(aField reflect.StructField, tag *Tag) *field {
+	idx := len(t.fields)
+	t.fields = append(t.fields, field{index: idx, Field: xunsafe.NewField(aField), tag: tag})
+	mapperField := &t.fields[idx]
+	if tag.IsMapKey {
+		t.key = append(t.key, mapperField)
+	}
+	fuzzName := strings.ReplaceAll(strings.ToLower(tag.Name), "_", "")
+	t.byName[tag.Name] = idx
+	t.byName[fuzzName] = idx
+	return mapperField
+}
+
+func newQueryMapper(recordType reflect.Type, list query.List) (*mapper, error) {
+	typeMapper, err := newTypeBaseMapper(recordType)
+	if err != nil {
+		return nil, err
+	}
+	if list.IsStarExpr() {
+		return typeMapper, nil
+	}
+	result := &mapper{fields: make([]field, 0), byName: make(map[string]int)}
+	for i := 0; i < len(list); i++ {
+		item := list[i]
+		switch actual := item.Expr.(type) {
+		case *expr.Ident, *expr.Selector:
+			name := sqlparser.Stringify(actual)
+			if index := strings.LastIndex(name, "."); index != -1 {
+				name = name[index+1:]
+			}
+			pos, ok := typeMapper.byName[name]
+			fuzzName := strings.ReplaceAll(strings.ToLower(name), "_", "")
+			if !ok {
+				pos, ok = typeMapper.byName[fuzzName]
+			}
+			if !ok {
+				return nil, fmt.Errorf("unable to match column: %v in type: %s", name, recordType.Name())
+			}
+			idx := len(result.fields)
+			result.fields = append(result.fields, typeMapper.fields[pos])
+			result.byName[name] = idx
+			result.byName[fuzzName] = idx
+		default:
+			return nil, fmt.Errorf("newmapper: unsupported expression type: %T", actual)
+		}
+	}
+	return result, nil
+}
+
+func newTypeBaseMapper(recordType reflect.Type) (*mapper, error) {
+	typeMapper := &mapper{fields: make([]field, 0), byName: make(map[string]int)}
+	var idIndex *int
 	for i := 0; i < recordType.NumField(); i++ {
 		aField := recordType.Field(i)
 		tag, err := ParseTag(aField.Tag.Get("aerospike"))
@@ -50,44 +118,24 @@ func newMapper(recordType reflect.Type, list query.List) (*mapper, error) {
 		if tag.Ignore {
 			continue
 		}
-		idx := len(m.fields)
-		m.fields = append(m.fields, field{index: idx, Field: xunsafe.NewField(aField), tag: tag})
-		fuzzName := strings.ReplaceAll(strings.ToLower(tag.Name), "_", "")
-		m.byName[tag.Name] = idx
-		m.byName[fuzzName] = idx
-	}
 
-	if list.IsStarExpr() {
-		return m, nil
-	}
-
-	listMapper := &mapper{fields: make([]field, 0), byName: make(map[string]int)}
-
-	for i := 0; i < len(list); i++ {
-		item := list[i]
-
-		switch actual := item.Expr.(type) {
-		case *expr.Ident, *expr.Selector:
-			name := sqlparser.Stringify(actual)
-			if index := strings.LastIndex(name, "."); index != -1 {
-				name = name[index+1:]
+		idx := len(typeMapper.fields)
+		if idIndex == nil {
+			if strings.ToLower(tag.Name) == "id" || strings.ToLower(tag.Name) == "pk" {
+				idIndex = &idx
 			}
-
-			pos, ok := m.byName[name]
-			fuzzName := strings.ReplaceAll(strings.ToLower(name), "_", "")
-			if !ok {
-				pos, ok = m.byName[fuzzName]
+		}
+		mapperField := typeMapper.addField(aField, tag)
+		if tag.IsPK {
+			if typeMapper.pk != nil {
+				return nil, fmt.Errorf("multiple PK tags detected in %T", recordType)
 			}
-			if !ok {
-				return nil, fmt.Errorf("unable to match column: %v in type: %s", name, recordType.Name())
-			}
-			idx := len(listMapper.fields)
-			listMapper.fields = append(listMapper.fields, m.fields[pos])
-			listMapper.byName[name] = idx
-			listMapper.byName[fuzzName] = idx
-		default:
-			return nil, fmt.Errorf("newmapper: unsupported expression type: %T", actual)
+			typeMapper.pk = mapperField
 		}
 	}
-	return listMapper, nil
+	if typeMapper.pk == nil && idIndex != nil {
+		typeMapper.pk = &typeMapper.fields[*idIndex]
+		typeMapper.pk.tag.IsPK = true
+	}
+	return typeMapper, nil
 }

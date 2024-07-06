@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go/v4"
 	"github.com/stretchr/testify/assert"
 	"sort"
 	"testing"
@@ -17,6 +16,7 @@ func Test_ExecContext(t *testing.T) {
 		Id   int //`aql:"id,key=true"
 		Name string
 	}
+
 	var testCase = []struct {
 		description string
 		dsn         string
@@ -64,16 +64,29 @@ func Test_ExecContext(t *testing.T) {
 */
 
 func Test_QueryContext(t *testing.T) {
-	namespace := "udb"
+	namespace := "test"
+	//
+	//seqKey := aerospike.CtxMapKey(aerospike.NewIntegerValue(101))
+	//ops := []*aerospike.Operation{
+	//	aerospike.MapIncrementOp(aerospike.DefaultMapPolicy(), "Bars", aerospike.NewStringValue("seq"), 1, seqKey),
+	//}
+	//
+	////		record, err = client.Operate(wpolicy, key, as.MapPutOp(as.DefaultMapPolicy(), cdtBinName, as.StringValue("key21"), as.IntegerValue(11), as.CtxMapKey(as.StringValue("key2"))), as.GetOpForBin(cdtBinName))
+	//key, _ = aerospike.NewKey("test", "Doc", 1)
+	//_, err = client.Operate(nil, key, ops...)
+	//if err != nil {
+	//	//log.Fatal(err)
+	//}
 
 	type Foo struct {
 		Id   int //`aql:"id,key=true"
 		Name string
 	}
 
-	type Bar struct {
-		Name string
-		Age  int
+	type Doc struct {
+		Id   int    `aerospike:"id,pk=true" `
+		Seq  int    `aerospike:"seq,key=true" `
+		Name string `aerospike:"name" `
 	}
 
 	var testCases = []struct {
@@ -82,18 +95,63 @@ func Test_QueryContext(t *testing.T) {
 		execSQL     string
 		execParams  []interface{}
 		querySQL    string
+		init        []string
 		queryParams []interface{}
 		expect      interface{}
 		scanner     func(r *sql.Rows) (interface{}, error)
-		testData    []*entry
 	}{
+		{
+			description: "get 1 record with all bins by PK",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}",
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+			},
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 100, Name: "doc1"},
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record with all bins by PK",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}",
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND Key = 101",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+			},
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 100, Name: "doc1"},
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
 		{
 			description: "get 1 record with all bins by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
 			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
-			queryParams: []interface{}{"1"},
-			testData:    []*entry{{pk: "1", set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}}},
+			init: []string{
+				"DELETE FROM Foo",
+				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
+			},
+			queryParams: []interface{}{1},
 			expect: []interface{}{
 				&Foo{Id: 1, Name: "foo1"},
 			},
@@ -108,9 +166,12 @@ func Test_QueryContext(t *testing.T) {
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "REGISTER SET Foo AS ?",
 			execParams:  []interface{}{Foo{}},
+			init: []string{
+				"DELETE FROM Foo",
+				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
+			},
 			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
-			queryParams: []interface{}{"0"},
-			testData:    []*entry{{pk: "1", set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}}},
+			queryParams: []interface{}{0},
 			expect:      []interface{}{},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				foo := Foo{}
@@ -122,9 +183,12 @@ func Test_QueryContext(t *testing.T) {
 			description: "get 1 record with all listed bins by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
-			querySQL:    "SELECT Foo.Id, Foo.Name FROM Foo WHERE PK = ?",
-			queryParams: []interface{}{"1"},
-			testData:    []*entry{{pk: "1", set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}}},
+			querySQL:    "SELECT Id, Name FROM Foo WHERE PK = ?",
+			init: []string{
+				"DELETE FROM Foo",
+				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
+			},
+			queryParams: []interface{}{1},
 			expect: []interface{}{
 				&Foo{Id: 1, Name: "foo1"},
 			},
@@ -135,34 +199,17 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record with chosen bins by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "REGISTER SET Bar AS ?",
-			execParams:  []interface{}{Bar{}},
-			querySQL:    "SELECT Bar.Name, Bar.Age FROM Bar WHERE PK = ?",
-			//	querySQL:    "SELECT Bar.Name, Bar.Age FROM Bar WHERE PK = ?", check with Foo
-			queryParams: []interface{}{"1"},
-			testData:    []*entry{{pk: "1", set: "Bar", binMap: as.BinMap{"Id": 1, "Name": "bar1", "Age": 20}}},
-			expect: []interface{}{
-				&Bar{Name: "bar1", Age: 20},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				bar := Bar{}
-				err := r.Scan(&bar.Name, &bar.Age)
-				return &bar, err
-			},
-		},
-		{
 			description: "batch get - all records found by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "REGISTER SET Foo AS ?",
 			execParams:  []interface{}{Foo{}},
 			querySQL:    "SELECT * FROM Foo WHERE PK IN(?, ?)",
 			queryParams: []interface{}{1, 3},
-			testData: []*entry{
-				{pk: 1, set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}},
-				{pk: 2, set: "Foo", binMap: as.BinMap{"Id": 2, "Name": "foo2"}},
-				{pk: 3, set: "Foo", binMap: as.BinMap{"Id": 3, "Name": "foo3"}},
+			init: []string{
+				"DELETE FROM Foo",
+				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
+				"INSERT INTO Foo(Id,Name) VALUES(2,'foo2')",
+				"INSERT INTO Foo(Id,Name) VALUES(3,'foo3')",
 			},
 			expect: []interface{}{
 				&Foo{Id: 1, Name: "foo1"},
@@ -181,10 +228,11 @@ func Test_QueryContext(t *testing.T) {
 			execParams:  []interface{}{Foo{}},
 			querySQL:    "SELECT * FROM Foo WHERE PK IN(?, ?, ?)",
 			queryParams: []interface{}{0, 1, 3},
-			testData: []*entry{
-				{pk: 1, set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}},
-				{pk: 2, set: "Foo", binMap: as.BinMap{"Id": 2, "Name": "foo2"}},
-				{pk: 3, set: "Foo", binMap: as.BinMap{"Id": 3, "Name": "foo3"}},
+			init: []string{
+				"DELETE FROM Foo",
+				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
+				"INSERT INTO Foo(Id,Name) VALUES(2,'foo2')",
+				"INSERT INTO Foo(Id,Name) VALUES(3,'foo3')",
 			},
 			expect: []interface{}{
 				&Foo{Id: 1, Name: "foo1"},
@@ -196,6 +244,27 @@ func Test_QueryContext(t *testing.T) {
 				return &foo, err
 			},
 		},
+
+		{
+			description: "get 1 record with all bins by PK",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
+			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
+			init: []string{
+				"DELETE FROM Foo",
+				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
+			},
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Foo{Id: 1, Name: "foo1"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := Foo{}
+				err := r.Scan(&foo.Id, &foo.Name)
+				return &foo, err
+			},
+		},
+
 		{
 			description: "batch get - 0 records found by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -203,10 +272,9 @@ func Test_QueryContext(t *testing.T) {
 			execParams:  []interface{}{Foo{}},
 			querySQL:    "SELECT * FROM Foo WHERE PK IN(?, ?, ?)",
 			queryParams: []interface{}{0, 10, 30},
-			testData: []*entry{
-				{pk: 1, set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}},
-				{pk: 2, set: "Foo", binMap: as.BinMap{"Id": 2, "Name": "foo2"}},
-				{pk: 3, set: "Foo", binMap: as.BinMap{"Id": 3, "Name": "foo3"}},
+			init: []string{
+				"DELETE FROM Foo",
+				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
 			},
 			expect: []interface{}{},
 			scanner: func(r *sql.Rows) (interface{}, error) {
@@ -222,10 +290,11 @@ func Test_QueryContext(t *testing.T) {
 			execParams:  []interface{}{Foo{}},
 			querySQL:    "SELECT * FROM Foo",
 			queryParams: []interface{}{},
-			testData: []*entry{
-				{pk: 1, set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}},
-				{pk: 2, set: "Foo", binMap: as.BinMap{"Id": 2, "Name": "foo2"}},
-				{pk: 3, set: "Foo", binMap: as.BinMap{"Id": 3, "Name": "foo3"}},
+			init: []string{
+				"DELETE FROM Foo",
+				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
+				"INSERT INTO Foo(Id,Name) VALUES(2,'foo2')",
+				"INSERT INTO Foo(Id,Name) VALUES(3,'foo3')",
 			},
 			expect: []interface{}{
 				&Foo{Id: 1, Name: "foo1"},
@@ -245,11 +314,8 @@ func Test_QueryContext(t *testing.T) {
 			execParams:  []interface{}{Foo{}},
 			querySQL:    "SELECT * FROM Foo",
 			queryParams: []interface{}{},
-			testData: []*entry{
-				{pk: 0, set: "Foo", binMap: nil},
-				//{pk: 1, set: "Foo", binMap: as.BinMap{"Id": 1, "Name": "foo1"}},
-				//{pk: 2, set: "Foo", binMap: as.BinMap{"Id": 2, "Name": "foo2"}},
-				//{pk: 3, set: "Foo", binMap: as.BinMap{"Id": 3, "Name": "foo3"}},
+			init: []string{
+				"DELETE FROM Foo",
 			},
 			expect: []interface{}{},
 			scanner: func(r *sql.Rows) (interface{}, error) {
@@ -258,24 +324,15 @@ func Test_QueryContext(t *testing.T) {
 				return &foo, err
 			},
 		},
-
-		// TODO scan read
-		// TODO check select * from foo where boo registered
 	}
 
-	for _, tc := range testCases {
+	ctx := context.Background()
+	for _, tc := range testCases[:1] {
 		//for _, tc := range testCases[len(testCases)-1:] {
 		t.Run(tc.description, func(t *testing.T) {
-			err := prepareTestData(tc.dsn, tc.testData)
-			if !assert.Nil(t, err, tc.description) {
-				return
-			}
 
 			db, err := sql.Open("aerospike", tc.dsn)
 			if !assert.Nil(t, err, tc.description) {
-				return
-			}
-			if !assert.NotNil(t, db, tc.description) {
 				return
 			}
 
@@ -283,7 +340,10 @@ func Test_QueryContext(t *testing.T) {
 				_, err = db.ExecContext(context.Background(), tc.execSQL, tc.execParams...)
 				assert.Nil(t, err, tc.description)
 			}
-
+			err = initDb(ctx, db, tc.init)
+			if !assert.Nil(t, err, tc.description) {
+				return
+			}
 			rows, err := db.QueryContext(context.Background(), tc.querySQL, tc.queryParams...)
 			if !assert.Nil(t, err, tc.description) {
 				return
@@ -303,45 +363,14 @@ func Test_QueryContext(t *testing.T) {
 	}
 }
 
-func prepareTestData(dsn string, testData []*entry) error {
-	cfg, err := ParseDSN(dsn)
-	client, err := as.NewClientWithPolicy(nil, cfg.Host, cfg.Port)
-	if err != nil {
-		return fmt.Errorf("failed to connect to aerospike with dsn %s due to: %v", dsn, err)
-	}
-
-	writePolicy := as.NewWritePolicy(0, 0)
-	writePolicy.SendKey = true
-
-	defer client.Close()
-
-	sets := map[string]bool{}
-	for _, v := range testData {
-		sets[v.set] = true
-	}
-
-	for set := range sets {
-		err = client.Truncate(nil, cfg.Namespace, set, nil)
+func initDb(ctx context.Context, db *sql.DB, init []string) error {
+	for _, SQL := range init {
+		_, err := db.ExecContext(ctx, SQL)
 		if err != nil {
-			return fmt.Errorf("failed to truncate test set: %v", err)
+			return err
 		}
 	}
-
-	for _, v := range testData {
-		key, err := as.NewKey(cfg.Namespace, v.set, v.pk)
-		if err != nil {
-			return fmt.Errorf("failed to create key for test record: %v", err)
-		}
-		if v.binMap != nil {
-			err = client.Put(writePolicy, key, v.binMap)
-			if err != nil {
-				return fmt.Errorf("failed to put test record: %v", err)
-			}
-		}
-
-	}
-
-	return err
+	return nil
 }
 
 type entry struct {

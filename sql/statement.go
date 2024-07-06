@@ -8,14 +8,18 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v4"
 	"github.com/aerospike/aerospike-client-go/v4/types"
 	"github.com/viant/sqlparser"
+	"github.com/viant/sqlparser/delete"
 	"github.com/viant/sqlparser/expr"
+	"github.com/viant/sqlparser/insert"
 	"github.com/viant/sqlparser/node"
 	"github.com/viant/sqlparser/query"
+	"github.com/viant/sqlparser/update"
 	"github.com/viant/x"
 	"github.com/viant/xreflect"
 	"github.com/viant/xunsafe"
 	"reflect"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -25,18 +29,22 @@ type Statement struct {
 	cfg    *Config
 	//BaseURL    string
 	SQL        string
-	Kind       sqlparser.Kind
+	kind       sqlparser.Kind
 	types      *x.Registry
 	query      *query.Select
+	insert     *insert.Statement
+	update     *update.Statement
+	delete     *delete.Statement
+	mapper     *mapper
 	filter     *as.Filter
 	recordType reflect.Type
-	//mapper     map[int]int
-	numInput  int
-	set       string
-	mapBin    string
-	namespace string
-	pkValues  []interface{}
-	keyValues []interface{}
+	record     interface{}
+	numInput   int
+	set        string
+	mapBin     string
+	namespace  string
+	pkValues   []interface{}
+	keyValues  []interface{}
 }
 
 // Exec executes statements
@@ -46,11 +54,19 @@ func (s *Statement) Exec(args []driver.Value) (driver.Result, error) {
 
 // ExecContext executes statements
 func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
-	switch s.Kind {
+	switch s.kind {
 	case sqlparser.KindRegisterSet:
 		return s.handleRegisterSet(args)
+	case sqlparser.KindInsert:
+		return nil, s.handleInsert(args)
+	case sqlparser.KindUpdate:
+
+	case sqlparser.KindDelete:
+		return nil, s.handleDelete(args)
+	case sqlparser.KindMerge:
+
 	case sqlparser.KindSelect:
-		return nil, fmt.Errorf("unsupported query type: %v", s.Kind)
+		return nil, fmt.Errorf("unsupported query type: %v", s.kind)
 	}
 	return nil, nil //TODO error - unsupported kind?
 }
@@ -62,20 +78,25 @@ func (s *Statement) Query(args []driver.Value) (driver.Rows, error) {
 
 // QueryContext runs query
 func (s *Statement) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-
-	switch s.Kind {
+	switch s.kind {
 	case sqlparser.KindSelect:
 	default:
-		return nil, fmt.Errorf("unsupported query type: %v", s.Kind)
+		return nil, fmt.Errorf("unsupported query type: %v", s.kind)
 	}
-
-	s.set = sqlparser.Stringify(s.query.From.X)
-	if index := strings.Index(s.set, "."); index != -1 {
-		s.namespace = s.set[:index]
-		s.set = s.set[index+1:]
-	}
-
 	return s.executeSelect(ctx, args)
+}
+
+func (s *Statement) setSet(set string) {
+	s.set = set
+	if index := strings.Index(set, "."); index != -1 {
+		s.namespace = set[:index]
+		s.set = set[index+1:]
+		set = s.set
+	}
+	if index := strings.Index(set, "$"); index != -1 {
+		s.mapBin = set[index+1:]
+		s.set = set[:index]
+	}
 }
 
 // NumInput returns numinput
@@ -154,6 +175,26 @@ func (s *Statement) prepareSelect(SQL string) error {
 	if s.query, err = sqlparser.ParseQuery(SQL); err != nil {
 		return err
 	}
+	s.setSet(sqlparser.Stringify(s.query.From.X))
+
+	return nil
+}
+
+func (s *Statement) prepareInsert(sql string) error {
+	var err error
+	if s.insert, err = sqlparser.ParseInsert(sql); err != nil {
+		return err
+	}
+	s.setSet(sqlparser.Stringify(s.insert.Target.X))
+	return nil
+}
+
+func (s *Statement) prepareDelete(sql string) error {
+	var err error
+	if s.delete, err = sqlparser.ParseDelete(sql); err != nil {
+		return err
+	}
+	s.setSet(sqlparser.Stringify(s.delete.Target.X))
 	return nil
 }
 
@@ -164,12 +205,10 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	} else {
 		return nil, fmt.Errorf("executeselect: unable to lookup type with name %s", s.set)
 	}
-
-	aMapper, err := newMapper(s.recordType, s.query.List)
+	aMapper, err := newQueryMapper(s.recordType, s.query.List)
 	if err != nil {
 		return nil, err
 	}
-
 	row := reflect.New(s.recordType).Interface()
 	rows := &Rows{
 		zeroRecord: unsafe.Slice((*byte)(xunsafe.AsPointer(row)), s.recordType.Size()),
@@ -178,7 +217,6 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		mapper:     aMapper,
 		query:      s.query,
 	}
-
 	if err := s.updateCriteria(err, args); err != nil {
 		return nil, err
 	}
@@ -186,10 +224,10 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	if err != nil {
 		return nil, err
 	}
-
 	switch len(keys) {
 	case 0:
 		if s.query.Qualify != nil {
+
 			//use query call
 		} else {
 			rows.rowsReader, err = s.client.ScanAll(as.NewScanPolicy(), s.namespace, s.set)
@@ -199,12 +237,18 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		}
 	case 1:
 
+		if len(s.keyValues) > 0 {
+			//handle key where
+		}
+
 		var record *as.Record
 		bins := make([]string, len(aMapper.fields))
 		for i, field := range aMapper.fields {
 			bins[i] = field.Name
 		}
-
+		if s.mapBin != "" {
+			bins = append(bins, s.mapBin)
+		}
 		if s.query.List.IsStarExpr() {
 			record, err = s.client.Get(as.NewPolicy(), keys[0])
 		} else {
@@ -218,18 +262,36 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 			return nil, err
 		}
-
+		if s.mapBin != "" {
+			records := make([]*as.Record, 0)
+			if err = s.handleBinResult(record, &records); err != nil {
+				return nil, err
+			}
+			rows.rowsReader = newRowsReader(records)
+			return rows, nil
+		}
 		rows.rowsReader = newRowsReader([]*as.Record{record})
 	default:
 		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
-		results := make([]*as.Record, 0)
-		for i, _ := range records {
-			if records[i] != nil {
-				results = append(results, records[i])
+		recs := make([]*as.Record, 0)
+		if s.mapBin != "" {
+			for i, _ := range records {
+				if records[i] != nil {
+					if err = s.handleBinResult(records[i], &recs); err != nil {
+						return nil, err
+					}
+				}
 			}
+			rows.rowsReader = newRowsReader(records)
+			return rows, nil
 		}
 
-		rows.rowsReader = newRowsReader(results)
+		for i, _ := range records {
+			if records[i] != nil {
+				recs = append(recs, records[i])
+			}
+		}
+		rows.rowsReader = newRowsReader(recs)
 		if err != nil {
 			if IsKeyNotFound(err) {
 				return rows, nil
@@ -240,12 +302,48 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	return rows, nil
 }
 
-func (s *Statement) updateCriteria(err error, args []driver.NamedValue) error {
+func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) error {
+	if mapBin, ok := record.Bins[s.mapBin]; ok {
+		mapBinMap, ok := mapBin.(map[interface{}]interface{})
+		if !ok {
+			return fmt.Errorf("invalid map bin value: %v", mapBin)
+		}
+		var filter = map[interface{}]bool{}
+		if len(s.keyValues) > 0 {
+			for _, key := range s.keyValues {
+				filter[key] = true
+			}
+		}
+		for mapKey, v := range mapBinMap {
+			if len(filter) > 0 {
+				if _, ok := filter[mapKey]; !ok {
+					continue
+				}
+			}
+			entry, ok := v.(map[interface{}]interface{})
+			if !ok {
+				return fmt.Errorf("invalid map bin entry value: %v", v)
+			}
+			var record = &as.Record{Bins: map[string]interface{}{}}
+			for k, value := range entry {
+				key, _ := k.(string)
+				record.Bins[key] = value
+			}
+			*records = append(*records, record)
+		}
+	}
+	return nil
+}
 
+func (s *Statement) updateCriteria(err error, args []driver.NamedValue) error {
 	if qualify := s.query.Qualify; qualify != nil {
 		binary, ok := qualify.X.(*expr.Binary)
 		if !ok {
 			return fmt.Errorf("unsupported expr type: %T", qualify.X)
+		}
+		pkName := ""
+		if s.mapper != nil {
+			pkName = s.mapper.pk.Column()
 		}
 		err := binary.Walk(func(ident node.Node, values expr.Values, operator, parentOperator string) error {
 			if parentOperator != "" && strings.ToUpper(parentOperator) != "AND" {
@@ -256,7 +354,7 @@ func (s *Statement) updateCriteria(err error, args []driver.NamedValue) error {
 				return args[idx].Value
 			})
 			switch name {
-			case "pk":
+			case "pk", pkName:
 				s.pkValues = exprValues
 			case "key":
 				s.keyValues = exprValues
@@ -312,6 +410,108 @@ func (s *Statement) buildKeys() ([]*as.Key, error) {
 		result[i] = key
 	}
 	return result, nil
+}
+
+func (s *Statement) prepareUpdate(sql string) error {
+	var err error
+	if s.update, err = sqlparser.ParseUpdate(sql); err != nil {
+		return err
+	}
+	s.setSet(sqlparser.Stringify(s.update.Target.X))
+	return nil
+}
+
+func (s *Statement) handleInsert(args []driver.NamedValue) error {
+	if s.insert == nil {
+		return fmt.Errorf("insert statement is not initialized")
+	}
+	bins := make(map[string]interface{})
+	j := 0
+	for i, column := range s.insert.Columns {
+		aField := s.mapper.getField(column)
+		if aField == nil {
+			return fmt.Errorf("unable to find field %v in type %T", column, s.recordType)
+		}
+		columnValue := s.insert.Values[i]
+		var value interface{}
+		if columnValue.IsPlaceholder() {
+			value = args[j].Value
+			j++
+		} else {
+			val, err := columnValue.Value()
+			if err != nil {
+				return err
+			}
+			value = val.Value
+		}
+		bins[aField.Column()] = value
+	}
+	pkField := s.mapper.pk
+	if pkField == nil {
+		return fmt.Errorf("unable to find primary key field")
+	}
+	pkName := pkField.Column()
+	key, err := as.NewKey(s.namespace, s.set, bins[pkName])
+	if err != nil {
+		return err
+	}
+
+	writePolicy := as.NewWritePolicy(0, 0)
+	writePolicy.SendKey = true
+	if s.mapBin != "" {
+		mapKey := s.getMap(bins)
+		ops := []*as.Operation{
+			as.MapPutOp(as.DefaultMapPolicy(), s.mapBin, mapKey, bins),
+		}
+		_, err = s.client.Operate(writePolicy, key, ops...)
+		return err
+	}
+	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
+	if err = s.client.Put(writePolicy, key, bins); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Statement) updateSetMapper() error {
+	var err error
+	if s.set == "" {
+		return nil
+	}
+	if aType := s.types.Lookup(s.set); aType != nil {
+		s.recordType = aType.Type
+		s.record = reflect.New(s.recordType).Interface()
+	} else {
+		return fmt.Errorf("executeselect: unable to lookup type with name %s", s.set)
+	}
+	if s.recordType != nil {
+		if s.mapper, err = newTypeBaseMapper(s.recordType); err != nil {
+			return err
+		}
+	}
+	return err
+}
+
+func (s *Statement) handleDelete(args []driver.NamedValue) error {
+	if s.delete.Qualify == nil {
+		now := time.Now()
+		return s.client.Truncate(nil, s.namespace, s.set, &now)
+	}
+	return fmt.Errorf("not yet supported")
+}
+
+func (s *Statement) getMap(bins map[string]interface{}) interface{} {
+	if len(s.mapper.key) == 1 {
+		return bins[s.mapper.key[0].Column()]
+	}
+	builder := strings.Builder{}
+	for i, key := range s.mapper.key {
+		if i > 0 {
+			builder.WriteString(":")
+		}
+		builder.WriteString(fmt.Sprintf("%v", bins[key.Column()]))
+	}
+	return nil
 }
 
 // IsKeyNotFound returns true if key not found error.
