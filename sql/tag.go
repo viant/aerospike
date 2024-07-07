@@ -22,11 +22,17 @@ func (t *Tag) updateTagKey(key, value string) error {
 	case "name":
 		t.Name = value
 	case "pk":
-		if t.IsPK, err = strconv.ParseBool(value); err != nil {
-			return err
+		if value == "" {
+			t.IsPK = true
+		} else {
+			if t.IsPK, err = strconv.ParseBool(value); err != nil {
+				return err
+			}
 		}
 	case "key":
-		if t.IsMapKey, err = strconv.ParseBool(value); err != nil {
+		if value == "" {
+			t.IsMapKey = true
+		} else if t.IsMapKey, err = strconv.ParseBool(value); err != nil {
 			return err
 		}
 	default:

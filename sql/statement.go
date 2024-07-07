@@ -19,7 +19,6 @@ import (
 	"github.com/viant/xunsafe"
 	"reflect"
 	"strings"
-	"time"
 	"unsafe"
 )
 
@@ -60,7 +59,7 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 	case sqlparser.KindInsert:
 		return nil, s.handleInsert(args)
 	case sqlparser.KindUpdate:
-
+		return nil, s.handleUpdate(args)
 	case sqlparser.KindDelete:
 		return nil, s.handleDelete(args)
 	case sqlparser.KindMerge:
@@ -180,15 +179,6 @@ func (s *Statement) prepareSelect(SQL string) error {
 	return nil
 }
 
-func (s *Statement) prepareInsert(sql string) error {
-	var err error
-	if s.insert, err = sqlparser.ParseInsert(sql); err != nil {
-		return err
-	}
-	s.setSet(sqlparser.Stringify(s.insert.Target.X))
-	return nil
-}
-
 func (s *Statement) prepareDelete(sql string) error {
 	var err error
 	if s.delete, err = sqlparser.ParseDelete(sql); err != nil {
@@ -217,7 +207,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		mapper:     aMapper,
 		query:      s.query,
 	}
-	if err := s.updateCriteria(err, args); err != nil {
+	if err := s.updateCriteria(s.query.Qualify, args, true); err != nil {
 		return nil, err
 	}
 	keys, err := s.buildKeys()
@@ -227,7 +217,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	switch len(keys) {
 	case 0:
 		if s.query.Qualify != nil {
-
+			return nil, fmt.Errorf("executeselect: unsupported query without key")
 			//use query call
 		} else {
 			rows.rowsReader, err = s.client.ScanAll(as.NewScanPolicy(), s.namespace, s.set)
@@ -236,15 +226,10 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 		}
 	case 1:
-
-		if len(s.keyValues) > 0 {
-			//handle key where
-		}
-
 		var record *as.Record
 		bins := make([]string, len(aMapper.fields))
 		for i, field := range aMapper.fields {
-			bins[i] = field.Name
+			bins[i] = field.Column()
 		}
 		if s.mapBin != "" {
 			bins = append(bins, s.mapBin)
@@ -254,7 +239,6 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		} else {
 			record, err = s.client.Get(as.NewPolicy(), keys[0], bins...)
 		}
-
 		if err != nil {
 			if IsKeyNotFound(err) {
 				rows.rowsReader = newRowsReader([]*as.Record{})
@@ -335,69 +319,89 @@ func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) er
 	return nil
 }
 
-func (s *Statement) updateCriteria(err error, args []driver.NamedValue) error {
-	if qualify := s.query.Qualify; qualify != nil {
-		binary, ok := qualify.X.(*expr.Binary)
-		if !ok {
-			return fmt.Errorf("unsupported expr type: %T", qualify.X)
-		}
-		pkName := ""
-		if s.mapper != nil {
-			pkName = s.mapper.pk.Column()
-		}
-		err := binary.Walk(func(ident node.Node, values expr.Values, operator, parentOperator string) error {
-			if parentOperator != "" && strings.ToUpper(parentOperator) != "AND" {
-				return fmt.Errorf("unuspported logical operator: %s", parentOperator)
-			}
-			name := strings.ToLower(sqlparser.Stringify(ident))
-			var exprValues = values.Values(func(idx int) interface{} {
-				return args[idx].Value
-			})
-			switch name {
-			case "pk", pkName:
-				s.pkValues = exprValues
-			case "key":
-				s.keyValues = exprValues
-			default:
-				switch strings.ToLower(operator) {
-				case "between":
-					if len(exprValues) != 2 {
-						return fmt.Errorf("invalid criteria values")
-					}
-					exprVal0, ok := exprValues[0].(expr.Value)
-					if !ok {
-						return fmt.Errorf("invalid criteria type expected %T but had %T", expr.Value{}, exprValues[0])
-					}
-					exprVal1, ok := exprValues[1].(expr.Value)
-					if !ok {
-						return fmt.Errorf("invalid criteria type expected %T but had %T", expr.Value{}, exprValues[1])
-					}
-
-					from, ok := exprVal0.AsInt()
-					if !ok {
-						return fmt.Errorf("unable to get int value from criteria value %v", exprVal0)
-					}
-					to, ok := exprVal1.AsInt()
-					if !ok {
-						return fmt.Errorf("unable to get int value from criteria value %v", exprVal1)
-					}
-
-					s.filter = as.NewRangeFilter(name, int64(from), int64(to))
-					//Filter add range operator
-				case "like":
-					//contain
-				case "=":
-					//equal criteri
-				}
-				//you may still use aerospike query with index
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
+func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedValue, includeFilter bool) error {
+	if qualify == nil {
+		return nil
 	}
-	return err
+	binary, ok := qualify.X.(*expr.Binary)
+	if !ok {
+		return fmt.Errorf("unsupported expr type: %T", qualify.X)
+	}
+	pkName := "-"
+	if s.mapper != nil && len(s.mapper.pk) > 1 {
+		pkName = s.mapper.pk[0].Column()
+	}
+	keyName := "--"
+	if s.mapper != nil && len(s.mapper.key) > 1 {
+		keyName = s.mapper.key[0].Column()
+	}
+	isMultiInPk := len(s.mapper.pk) > 1
+	isMultiInKey := len(s.mapper.key) > 1
+
+	idx := 0
+	err := binary.Walk(func(ident node.Node, values *expr.Values, operator, parentOperator string) error {
+		if parentOperator != "" && strings.ToUpper(parentOperator) != "AND" {
+			return fmt.Errorf("unuspported logical operator: %s", parentOperator)
+		}
+		values.Idx = idx
+		name := strings.ToLower(sqlparser.Stringify(ident))
+		var exprValues = values.Values(func(idx int) interface{} {
+			return args[idx].Value
+		})
+		idx = values.Idx
+		//TODO add support for multi in (col1,col2) IN((?, ?), (?, ?))
+		if isMultiInPk {
+
+		}
+		//TODO add support for multi in (col1,col2) IN((?, ?), (?, ?))
+		if isMultiInKey {
+
+		}
+		switch name {
+		case "pk", pkName:
+			s.pkValues = exprValues
+		case "key", keyName:
+			s.keyValues = exprValues
+		default:
+			if !includeFilter {
+				return fmt.Errorf("unsupported criteria: %s", name)
+			}
+			switch strings.ToLower(operator) {
+			case "between":
+				if len(exprValues) != 2 {
+					return fmt.Errorf("invalid criteria values")
+				}
+				exprVal0, ok := exprValues[0].(expr.Value)
+				if !ok {
+					return fmt.Errorf("invalid criteria type expected %T but had %T", expr.Value{}, exprValues[0])
+				}
+				exprVal1, ok := exprValues[1].(expr.Value)
+				if !ok {
+					return fmt.Errorf("invalid criteria type expected %T but had %T", expr.Value{}, exprValues[1])
+				}
+				from, ok := exprVal0.AsInt()
+				if !ok {
+					return fmt.Errorf("unable to get int value from criteria value %v", exprVal0)
+				}
+				to, ok := exprVal1.AsInt()
+				if !ok {
+					return fmt.Errorf("unable to get int value from criteria value %v", exprVal1)
+				}
+				s.filter = as.NewRangeFilter(name, int64(from), int64(to))
+				//Filter add range operator
+			case "like":
+				//contain
+			case "=":
+				//equal criteria
+			}
+			//you may still use aerospike query with index
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Statement) buildKeys() ([]*as.Key, error) {
@@ -410,67 +414,6 @@ func (s *Statement) buildKeys() ([]*as.Key, error) {
 		result[i] = key
 	}
 	return result, nil
-}
-
-func (s *Statement) prepareUpdate(sql string) error {
-	var err error
-	if s.update, err = sqlparser.ParseUpdate(sql); err != nil {
-		return err
-	}
-	s.setSet(sqlparser.Stringify(s.update.Target.X))
-	return nil
-}
-
-func (s *Statement) handleInsert(args []driver.NamedValue) error {
-	if s.insert == nil {
-		return fmt.Errorf("insert statement is not initialized")
-	}
-	bins := make(map[string]interface{})
-	j := 0
-	for i, column := range s.insert.Columns {
-		aField := s.mapper.getField(column)
-		if aField == nil {
-			return fmt.Errorf("unable to find field %v in type %T", column, s.recordType)
-		}
-		columnValue := s.insert.Values[i]
-		var value interface{}
-		if columnValue.IsPlaceholder() {
-			value = args[j].Value
-			j++
-		} else {
-			val, err := columnValue.Value()
-			if err != nil {
-				return err
-			}
-			value = val.Value
-		}
-		bins[aField.Column()] = value
-	}
-	pkField := s.mapper.pk
-	if pkField == nil {
-		return fmt.Errorf("unable to find primary key field")
-	}
-	pkName := pkField.Column()
-	key, err := as.NewKey(s.namespace, s.set, bins[pkName])
-	if err != nil {
-		return err
-	}
-
-	writePolicy := as.NewWritePolicy(0, 0)
-	writePolicy.SendKey = true
-	if s.mapBin != "" {
-		mapKey := s.getMap(bins)
-		ops := []*as.Operation{
-			as.MapPutOp(as.DefaultMapPolicy(), s.mapBin, mapKey, bins),
-		}
-		_, err = s.client.Operate(writePolicy, key, ops...)
-		return err
-	}
-	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
-	if err = s.client.Put(writePolicy, key, bins); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *Statement) updateSetMapper() error {
@@ -494,18 +437,18 @@ func (s *Statement) updateSetMapper() error {
 
 func (s *Statement) handleDelete(args []driver.NamedValue) error {
 	if s.delete.Qualify == nil {
-		now := time.Now()
-		return s.client.Truncate(nil, s.namespace, s.set, &now)
+		return s.client.Truncate(nil, s.namespace, s.set, nil)
 	}
+	//TODO add support for single/batch delete
 	return fmt.Errorf("not yet supported")
 }
 
-func (s *Statement) getMap(bins map[string]interface{}) interface{} {
-	if len(s.mapper.key) == 1 {
-		return bins[s.mapper.key[0].Column()]
+func (s *Statement) getKey(fields []*field, bins map[string]interface{}) interface{} {
+	if len(fields) == 1 {
+		return bins[fields[0].Column()]
 	}
 	builder := strings.Builder{}
-	for i, key := range s.mapper.key {
+	for i, key := range fields {
 		if i > 0 {
 			builder.WriteString(":")
 		}

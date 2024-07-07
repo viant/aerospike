@@ -10,10 +10,12 @@ import (
 
 // Config represent Connection config
 type Config struct {
-	Host         string
-	Port         int
-	Namespace    string
+	host         string
+	port         int
+	namespace    string
 	ClientPolicy *as.ClientPolicy
+	batchSize    int
+	concurrency  int
 	url.Values
 	// expiry options
 	/*
@@ -57,9 +59,11 @@ func ParseDSN(dsn string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Host:         host,
-		Port:         iPort,
-		Namespace:    namespace,
+		host:         host,
+		port:         iPort,
+		namespace:    namespace,
+		batchSize:    1000,
+		concurrency:  10,
 		ClientPolicy: as.NewClientPolicy(), //TODO
 		Values:       URL.Query(),          //TODO
 	}

@@ -33,12 +33,12 @@ func (d Driver) Open(dsn string) (driver.Conn, error) {
 		return nil, err
 	}
 
-	client, err := as.NewClient(cfg.Host, cfg.Port) //TODO
+	client, err := as.NewClient(cfg.host, cfg.port) //TODO
 	if err != nil {
 		return nil, err
 	}
 	/*
-		client, err := as.NewClientWithPolicy(cfg.ClientPolicy, cfg.Host, cfg.Port)
+		client, err := as.NewClientWithPolicy(cfg.ClientPolicy, cfg.host, cfg.port)
 		if err != nil {
 			return nil, err
 		}

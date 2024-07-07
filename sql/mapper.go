@@ -22,17 +22,30 @@ type (
 	mapper struct {
 		fields        []field
 		collectionBin string
-		pk            *field
+		pk            []*field
 		key           []*field
 		byName        map[string]int
 	}
 )
 
-func (m *field) Column() string {
-	if m.tag != nil {
-		return m.tag.Name
+func (f *field) ensureValidValueType(value interface{}) interface{} {
+	valueType := reflect.TypeOf(value)
+	if valueType.Kind() == f.Type.Kind() {
+		return value
 	}
-	return m.Field.Name
+	if valueType.AssignableTo(valueType) {
+		value = reflect.ValueOf(value).Convert(f.Type).Interface()
+	} else {
+		//TODO add extra converson logic
+	}
+	return value
+}
+
+func (f *field) Column() string {
+	if f.tag != nil {
+		return f.tag.Name
+	}
+	return f.Field.Name
 }
 func (t *mapper) lookup(name string) *xunsafe.Field {
 	field := t.getField(name)
@@ -130,12 +143,12 @@ func newTypeBaseMapper(recordType reflect.Type) (*mapper, error) {
 			if typeMapper.pk != nil {
 				return nil, fmt.Errorf("multiple PK tags detected in %T", recordType)
 			}
-			typeMapper.pk = mapperField
+			typeMapper.pk = append(typeMapper.pk, mapperField)
 		}
 	}
 	if typeMapper.pk == nil && idIndex != nil {
-		typeMapper.pk = &typeMapper.fields[*idIndex]
-		typeMapper.pk.tag.IsPK = true
+		typeMapper.pk = append(typeMapper.pk, &typeMapper.fields[*idIndex])
+		typeMapper.pk[0].tag.IsPK = true
 	}
 	return typeMapper, nil
 }

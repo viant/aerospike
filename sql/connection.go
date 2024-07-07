@@ -30,7 +30,7 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 		types:     c.types,
 		client:    c.client,
 		cfg:       c.cfg,
-		namespace: c.cfg.Namespace,
+		namespace: c.cfg.namespace,
 	}
 	stmt.checkQueryParameters()
 
