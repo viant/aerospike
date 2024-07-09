@@ -84,15 +84,16 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 		if len(s.keyValues) != 1 {
 			return fmt.Errorf("update statement map must have one map key")
 		}
+		mapPolicy := as.NewMapPolicy(as.MapOrder.KEY_ORDERED, as.MapWriteMode.UPDATE)
 		binKey := as.CtxMapKey(as.NewValue(s.keyValues[0]))
 		for key, value := range addBins {
-			operates = append(operates, as.MapIncrementOp(nil, s.mapBin, key, value, binKey))
+			operates = append(operates, as.MapIncrementOp(mapPolicy, s.mapBin, key, value, binKey))
 		}
 		for key, value := range subBins {
-			operates = append(operates, as.MapDecrementOp(nil, s.mapBin, key, value, binKey))
+			operates = append(operates, as.MapDecrementOp(mapPolicy, s.mapBin, key, value, binKey))
 		}
 		for key, value := range putBins {
-			operates = append(operates, as.MapPutOp(nil, s.mapBin, key, value, binKey))
+			operates = append(operates, as.MapPutOp(mapPolicy, s.mapBin, key, value, binKey))
 		}
 	} else {
 		for key, value := range addBins {

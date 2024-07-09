@@ -42,6 +42,13 @@ func BenchmarkStatement_ExecContext_BatchInsert(b *testing.B) {
 }
 
 func BenchmarkStatement_ExecContext_BatchMerge(b *testing.B) {
+	/*  feature_value->1.. 100 000
+	 *  pk:date, mod(%100) 500
+		secofday, count
+		set :feature_type -> viant-taxonomy
+
+		signals -> date, secofday (5min interval), feature_type, feature_value, count
+	*/
 	data := perfTestData()
 	namespace := "test"
 	values := strings.Repeat("(?, ?, ?, ?, ?),", len(data))
@@ -87,10 +94,10 @@ func (p *PerfTest) Bind() []interface{} {
 }
 
 func perfTestData() []*PerfTest {
-	var items = make([]*PerfTest, 10000)
+	var items = make([]*PerfTest, 100000)
 	for i := range items {
 		items[i] = &PerfTest{
-			ID:       i % 100,
+			ID:       i % 1000,
 			Seq:      i,
 			Active:   i % 2,
 			Quantity: 3 + i,
