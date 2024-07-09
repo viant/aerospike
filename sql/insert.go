@@ -173,7 +173,7 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	batchCount := len(s.insert.Values) / len(s.insert.Columns)
 	if batchCount > 1 {
 		if s.mapBin != "" {
-			if len(s.mapper.pk) == 0 {
+			if len(s.mapper.key) == 0 {
 				return fmt.Errorf("unable to find map key field")
 			}
 			return s.handleMapLoad(args)
