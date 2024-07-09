@@ -5,8 +5,9 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go/v4"
-	"github.com/aerospike/aerospike-client-go/v4/types"
+
+	as "github.com/aerospike/aerospike-client-go/v6"
+	"github.com/aerospike/aerospike-client-go/v6/types"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/delete"
 	"github.com/viant/sqlparser/expr"
@@ -221,10 +222,13 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			return nil, fmt.Errorf("executeselect: unsupported query without key")
 			//use query call
 		} else {
-			rows.rowsReader, err = s.client.ScanAll(as.NewScanPolicy(), s.namespace, s.set)
+			recordset, err := s.client.ScanAll(as.NewScanPolicy(), s.namespace, s.set)
 			if err != nil {
 				return nil, fmt.Errorf("executeselect: unable to scan set %s due to %w", s.set, err)
 			}
+
+			rows.rowsReader = &RowsScanReader{Recordset: recordset}
+
 		}
 	case 1:
 		var record *as.Record
@@ -235,14 +239,18 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		if s.mapBin != "" {
 			bins = append(bins, s.mapBin)
 			if s.mapBinFilter != nil {
-				rangeOp := as.MapGetByKeyRangeOp(s.mapBin, s.mapBinFilter.begin, s.mapBinFilter.end, as.MapReturnType.VALUE)
+				rangeOp := as.MapGetByKeyRangeOp(s.mapBin, s.mapBinFilter.begin, s.mapBinFilter.end+1, as.MapReturnType.VALUE)
 				result, err := s.client.Operate(nil, keys[0], rangeOp)
 				if err != nil {
-
 					return nil, err
 				}
-				fmt.Printf("%v\n", result)
-
+				values, _ := result.Bins[s.mapBin]
+				var records []interface{}
+				if values != nil {
+					records, _ = values.([]interface{})
+				}
+				rows.rowsReader = newInterfaceReader(records)
+				return rows, nil
 			}
 		}
 
@@ -280,7 +288,8 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		default:
 			for i, _ := range records {
 				if records[i] != nil {
-					if err = s.handleBinResult(records[i], &recs); err != nil {
+					e := s.handleBinResult(records[i], &recs)
+					if e != nil {
 						return nil, err
 					}
 				}
@@ -509,18 +518,19 @@ func IsKeyNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	aeroError, ok := err.(types.AerospikeError)
+
+	aeroError, ok := err.(*as.AerospikeError)
 	if !ok {
 		err = errors.Unwrap(err)
 		if err == nil {
 			return false
 		}
-		if aeroError, ok = err.(types.AerospikeError); !ok {
+		if aeroError, ok = err.(*as.AerospikeError); !ok {
 			return false
 		}
 
 	}
-	return aeroError.ResultCode() == types.KEY_NOT_FOUND_ERROR
+	return aeroError.ResultCode == types.KEY_NOT_FOUND_ERROR
 }
 
 type MapBinFilter struct {

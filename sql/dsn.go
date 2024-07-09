@@ -2,7 +2,7 @@ package sql
 
 import (
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go/v4"
+	as "github.com/aerospike/aerospike-client-go/v6"
 	"net/url"
 	"strconv"
 	"strings"

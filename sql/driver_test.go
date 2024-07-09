@@ -529,9 +529,11 @@ func Test_QueryContext(t *testing.T) {
 			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 99,'doc0')",
 				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
 				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
 				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 104,'doc4')",
 			},
 			queryParams: []interface{}{1, 101, 102},
 			expect: []interface{}{

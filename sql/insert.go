@@ -3,7 +3,7 @@ package sql
 import (
 	"database/sql/driver"
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go/v4"
+	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
 	"sync"
@@ -59,7 +59,8 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 		for k, v := range group {
 			values[k] = v
 		}
-		ops = append(ops, as.MapPutItemsOp(as.DefaultMapPolicy(), s.mapBin, values))
+		mapPolicy := as.DefaultMapPolicy()
+		ops = append(ops, as.MapPutItemsOp(mapPolicy, s.mapBin, values))
 		if _, err = s.client.Operate(writePolicy, key, ops...); err != nil {
 			return err
 		}

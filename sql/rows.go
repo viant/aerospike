@@ -2,9 +2,9 @@ package sql
 
 import (
 	"database/sql/driver"
+	"errors"
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go/v4"
-	"github.com/aerospike/aerospike-client-go/v4/types"
+	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/structology"
 	"github.com/viant/xunsafe"
@@ -43,7 +43,7 @@ func (r *Rows) Close() error {
 // Next moves to next row
 func (r *Rows) Next(dest []driver.Value) error {
 	record, err := r.rowsReader.Read()
-	if err == types.ErrRecordsetClosed {
+	if errors.Is(err, as.ErrRecordsetClosed) {
 		return io.EOF
 	}
 	if err != nil {

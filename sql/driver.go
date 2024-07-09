@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go/v4"
+	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/x"
 )
 
