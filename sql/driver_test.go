@@ -546,13 +546,204 @@ func Test_QueryContext(t *testing.T) {
 				return &doc, err
 			},
 		},
+		{
+			description: "get 1 record by PK with 1 bin map values by key and between operator",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 101, 101},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 0 bin map values by key and between operator",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 900, 901},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 0 records by PK with 0 bin map values by key and between operator",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{901, 900, 901},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 1 bin map values by key",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 101},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 0 bin map values by key",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 901},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 0 record by PK with 0 bin map values by key",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{900, 901},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 2 bin map values by key list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 104,'doc4')",
+			},
+			queryParams: []interface{}{1, 101, 104},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+				&Doc{Id: 1, Seq: 104, Name: "doc4"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 1 bin map values by key list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 101, 904},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 0 bin map values by key list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 901, 904},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 0 record by PK with 0 bin map values by key list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{900, 901, 904},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
 	}
 
 	ctx := context.Background()
-	//for _, tc := range testCases[0:1] {
 	for _, tc := range testCases {
-		fmt.Printf("running test: %v\n", tc.description)
+		//for _, tc := range testCases[0:1] {
 		//for _, tc := range testCases[len(testCases)-1:] {
+		fmt.Printf("running test: %v\n", tc.description)
+
 		t.Run(tc.description, func(t *testing.T) {
 
 			if tc.skip {
@@ -610,12 +801,6 @@ func initDb(ctx context.Context, db *sql.DB, init []string) error {
 		}
 	}
 	return nil
-}
-
-type entry struct {
-	pk     interface{}
-	set    string
-	binMap map[string]interface{}
 }
 
 /*

@@ -5,7 +5,6 @@ go 1.21.6
 toolchain go1.21.11
 
 require (
-	github.com/aerospike/aerospike-client-go/v4 v4.7.1
 	github.com/aerospike/aerospike-client-go/v6 v6.15.1
 	github.com/stretchr/testify v1.9.0
 	github.com/viant/sqlparser v0.7.1-0.20240709140449-53ab3a18928f

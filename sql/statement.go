@@ -236,22 +236,48 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		for i, field := range aMapper.fields {
 			bins[i] = field.Column()
 		}
-		if s.mapBin != "" {
-			bins = append(bins, s.mapBin)
-			if s.mapBinFilter != nil {
-				rangeOp := as.MapGetByKeyRangeOp(s.mapBin, s.mapBinFilter.begin, s.mapBinFilter.end+1, as.MapReturnType.VALUE)
-				result, err := s.client.Operate(nil, keys[0], rangeOp)
-				if err != nil {
-					return nil, err
+
+		if s.mapBin != "" && (s.mapBinFilter != nil || len(s.keyValues) > 0) {
+			var op *as.Operation
+			var result *as.Record
+
+			switch {
+			case s.mapBinFilter != nil && len(s.keyValues) > 0:
+				return nil, fmt.Errorf("unsupported criteria combination: key values list and key range")
+			case s.mapBinFilter != nil:
+				op = as.MapGetByKeyRangeOp(s.mapBin, s.mapBinFilter.begin, s.mapBinFilter.end+1, as.MapReturnType.VALUE)
+			case len(s.keyValues) == 1:
+				op = as.MapGetByKeyOp(s.mapBin, s.keyValues[0], as.MapReturnType.VALUE)
+			case len(s.keyValues) > 1:
+				op = as.MapGetByKeyListOp(s.mapBin, s.keyValues, as.MapReturnType.VALUE)
+			}
+
+			result, err = s.client.Operate(nil, keys[0], op)
+			if err != nil {
+				if IsKeyNotFound(err) {
+					rows.rowsReader = newRowsReader([]*as.Record{})
+					return rows, nil
 				}
-				values, _ := result.Bins[s.mapBin]
-				var records []interface{}
-				if values != nil {
+				return nil, err
+			}
+
+			values, _ := result.Bins[s.mapBin]
+			var records []interface{}
+			if values != nil {
+				switch {
+				case len(s.keyValues) == 1:
+					records = []interface{}{values}
+				default:
 					records, _ = values.([]interface{})
 				}
-				rows.rowsReader = newInterfaceReader(records)
-				return rows, nil
+
 			}
+			rows.rowsReader = newInterfaceReader(records)
+			return rows, nil
+		}
+
+		if s.mapBin != "" {
+			bins = append(bins, s.mapBin)
 		}
 
 		if s.query.List.IsStarExpr() {
@@ -259,6 +285,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		} else {
 			record, err = s.client.Get(as.NewPolicy(), keys[0], bins...)
 		}
+
 		if err != nil {
 			if IsKeyNotFound(err) {
 				rows.rowsReader = newRowsReader([]*as.Record{})
@@ -266,6 +293,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 			return nil, err
 		}
+
 		if s.mapBin != "" {
 			records := make([]*as.Record, 0)
 			if err = s.handleBinResult(record, &records); err != nil {
@@ -274,19 +302,22 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			rows.rowsReader = newRowsReader(records)
 			return rows, nil
 		}
+
 		rows.rowsReader = newRowsReader([]*as.Record{record})
 	default:
+		// TODO user BatchGetOperate
+		// func (clnt *Client) BatchGetOperate(policy *BatchPolicy, keys []*Key, ops ...*Operation) ([]*Record, Error) {
 		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		recs := make([]*as.Record, 0)
 		switch s.mapBin {
 		case "":
-			for i, _ := range records {
+			for i := range records {
 				if records[i] != nil {
 					recs = append(recs, records[i])
 				}
 			}
 		default:
-			for i, _ := range records {
+			for i := range records {
 				if records[i] != nil {
 					e := s.handleBinResult(records[i], &recs)
 					if e != nil {
@@ -327,6 +358,7 @@ func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) er
 				}
 			}
 
+			// TODO add support for BatchGet and/or ScanAll -> BatchGetOperate
 			if s.mapBinFilter != nil {
 				mapBinKeyInt, ok := mapKey.(int)
 				if !ok {
