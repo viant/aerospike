@@ -7,7 +7,7 @@ toolchain go1.21.11
 require (
 	github.com/aerospike/aerospike-client-go/v4 v4.7.1
 	github.com/stretchr/testify v1.9.0
-	github.com/viant/sqlparser v0.7.1-0.20240707042111-f8521e8179c2
+	github.com/viant/sqlparser v0.7.1-0.20240709140449-53ab3a18928f
 	github.com/viant/structology v0.5.6-0.20240703221418-965d2a848bd0
 	github.com/viant/tagly v0.2.0
 	github.com/viant/x v0.3.0
@@ -31,3 +31,5 @@ require (
 	golang.org/x/tools v0.19.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+//replace github.com/viant/sqlparser => /Users/michael/Go/src/github.com/viant/sqlparser

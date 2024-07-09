@@ -65,6 +65,8 @@ func Test_ExecContext(t *testing.T) {
 
 func Test_QueryContext(t *testing.T) {
 	namespace := "test"
+	//namespace := "udb"
+	//namespace := "udb"
 	type Foo struct {
 		Id   int //`aql:"id,key=true"
 		Name string
@@ -109,12 +111,43 @@ func Test_QueryContext(t *testing.T) {
 		skip        bool
 		scanner     func(r *sql.Rows) (interface{}, error)
 	}{
+		{
+			description: "batch merge with map",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			/*
+				execSQL:     "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
+				execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
+			*/
+			execSQL:    "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
+			execParams: []interface{}{1, 1, 11, 111, 1, 2, 12, 121},
 
+			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
+			queryParams: []interface{}{1, 1, 2},
+			init: []string{
+				"DELETE FROM Agg",
+				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,1,1,1)",
+				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,2,1,1)",
+				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(2,1,1,1)",
+			},
+			expect: []interface{}{
+				&Agg{Id: 1, Seq: 1, Amount: 12, Val: 112},
+				&Agg{Id: 1, Seq: 2, Amount: 13, Val: 122},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := Agg{}
+				err := r.Scan(&agg.Id, &agg.Seq, &agg.Amount, &agg.Val)
+				return &agg, err
+			},
+		},
 		{
 			description: "batch merge",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "INSERT INTO SimpleAgg(id,amount) VALUES(?,?),(?,?),(?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount",
-			execParams:  []interface{}{1, 11, 2, 12, 3, 33},
+			execParams: []interface{}{
+				1, 11,
+				2, 12,
+				3, 33,
+			},
 			querySQL:    "SELECT id,amount FROM SimpleAgg WHERE PK IN(?,?,?)",
 			queryParams: []interface{}{1, 2, 3},
 			init: []string{
@@ -134,12 +167,14 @@ func Test_QueryContext(t *testing.T) {
 				return &agg, err
 			},
 		},
-
 		{
 			description: "batch merge with map",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
-			execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
+			execParams: []interface{}{
+				1, 1, 11, 111,
+				1, 2, 12, 121,
+				2, 1, 11, 111},
 			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
@@ -158,7 +193,6 @@ func Test_QueryContext(t *testing.T) {
 				return &agg, err
 			},
 		},
-
 		{
 			description: "batch map insert",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -179,7 +213,6 @@ func Test_QueryContext(t *testing.T) {
 				return &agg, err
 			},
 		},
-
 		{
 			description: "batch insert",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -200,7 +233,7 @@ func Test_QueryContext(t *testing.T) {
 				return &agg, err
 			},
 		},
-
+		// TODO
 		{
 			description: "update map bin with inc ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -302,7 +335,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record with map key",
+			description: "get 1 record by PK with 1 bin map value by key",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
@@ -321,7 +354,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record all map values by PK",
+			description: "get 1 record by PK with all bin map values",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ?",
 			init: []string{
@@ -340,11 +373,11 @@ func Test_QueryContext(t *testing.T) {
 				return &doc, err
 			},
 		},
-
 		{
 			description: "get 1 record with all bins by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
+			//			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
+			querySQL: "SELECT * FROM Foo WHERE PK = ?",
 			init: []string{
 				"DELETE FROM Foo",
 				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
@@ -436,27 +469,6 @@ func Test_QueryContext(t *testing.T) {
 				return &foo, err
 			},
 		},
-
-		{
-			description: "get 1 record with all bins by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
-			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
-			init: []string{
-				"DELETE FROM Foo",
-				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
-			},
-			queryParams: []interface{}{1},
-			expect: []interface{}{
-				&Foo{Id: 1, Name: "foo1"},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				foo := Foo{}
-				err := r.Scan(&foo.Id, &foo.Name)
-				return &foo, err
-			},
-		},
-
 		{
 			description: "batch get - 0 records found by PK",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -511,9 +523,31 @@ func Test_QueryContext(t *testing.T) {
 				return &foo, err
 			},
 		},
+		{
+			description: "get 1 record by PK with 2 bin map values by key and between operator",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 101, 102},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+				&Doc{Id: 1, Seq: 102, Name: "doc3"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
 	}
 
 	ctx := context.Background()
+	//for _, tc := range testCases[0:1] {
 	for _, tc := range testCases {
 		fmt.Printf("running test: %v\n", tc.description)
 		//for _, tc := range testCases[len(testCases)-1:] {
@@ -535,11 +569,15 @@ func Test_QueryContext(t *testing.T) {
 			}
 			err = initDb(ctx, db, tc.init)
 			if !assert.Nil(t, err, tc.description) {
+				fmt.Println("initDb ERROR: ", err.Error())
 				return
 			}
 			if tc.execSQL != "" {
 				_, err = db.ExecContext(context.Background(), tc.execSQL, tc.execParams...)
-				assert.Nil(t, err, tc.description)
+				if !assert.Nil(t, err, tc.description) {
+					fmt.Println("execSQL ERROR: ", err.Error())
+					return
+				}
 			}
 
 			rows, err := db.QueryContext(context.Background(), tc.querySQL, tc.queryParams...)
@@ -547,6 +585,7 @@ func Test_QueryContext(t *testing.T) {
 				return
 			}
 			assert.NotNil(t, rows, tc.description)
+
 			var items = make([]interface{}, 0)
 			for rows.Next() {
 				item, err := tc.scanner(rows)
@@ -576,3 +615,37 @@ type entry struct {
 	set    string
 	binMap map[string]interface{}
 }
+
+/*
+feature_value -> 1 .. 100,000
+secofday, count
+set: feature_type -> viant-taxonomy
+
+signals -> date, secofday (5min interval), feature_type, feature_value, count
+*/
+
+/// TODO START
+//		{
+//			description: "batch get - few records by PK with a few bin map values",
+//			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+//			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK IN(?, ?, ?) AND KEY = ?", // TODO IN(?)
+//			queryParams: []interface{}{0, 2, 3, 200},
+//			init: []string{
+//				"DELETE FROM Doc",
+//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc100')",
+//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc101')",
+//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(2, 200,'doc200')",
+//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(2, 201,'doc201')",
+//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(3, 300,'doc300')",
+//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(3, 301,'doc301')",
+//			},
+//			expect: []interface{}{
+//				&Doc{Id: 2, Seq: 200, Name: "doc200"},
+//			},
+//			scanner: func(r *sql.Rows) (interface{}, error) {
+//				foo := Foo{}
+//				err := r.Scan(&foo.Id, &foo.Name)
+//				return &foo, err
+//			},
+//		},
+/// TODO STOP

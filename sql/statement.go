@@ -27,23 +27,24 @@ type Statement struct {
 	client *as.Client
 	cfg    *Config
 	//BaseURL    string
-	SQL        string
-	kind       sqlparser.Kind
-	types      *x.Registry
-	query      *query.Select
-	insert     *insert.Statement
-	update     *update.Statement
-	delete     *delete.Statement
-	mapper     *mapper
-	filter     *as.Filter
-	recordType reflect.Type
-	record     interface{}
-	numInput   int
-	set        string
-	mapBin     string
-	namespace  string
-	pkValues   []interface{}
-	keyValues  []interface{}
+	SQL          string
+	kind         sqlparser.Kind
+	types        *x.Registry
+	query        *query.Select
+	insert       *insert.Statement
+	update       *update.Statement
+	delete       *delete.Statement
+	mapper       *mapper
+	filter       *as.Filter
+	mapBinFilter *MapBinFilter
+	recordType   reflect.Type
+	record       interface{}
+	numInput     int
+	set          string
+	mapBin       string
+	namespace    string
+	pkValues     []interface{}
+	keyValues    []interface{}
 }
 
 // Exec executes statements
@@ -195,7 +196,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	} else {
 		return nil, fmt.Errorf("executeselect: unable to lookup type with name %s", s.set)
 	}
-	aMapper, err := newQueryMapper(s.recordType, s.query.List)
+	aMapper, err := newQueryMapper(s.recordType, s.query.List) //TODO add s.mapper as parameter, don't create mapper again
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +234,18 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		}
 		if s.mapBin != "" {
 			bins = append(bins, s.mapBin)
+			if s.mapBinFilter != nil {
+				rangeOp := as.MapGetByKeyRangeOp(s.mapBin, s.mapBinFilter.begin, s.mapBinFilter.end, as.MapReturnType.VALUE)
+				result, err := s.client.Operate(nil, keys[0], rangeOp)
+				if err != nil {
+
+					return nil, err
+				}
+				fmt.Printf("%v\n", result)
+
+			}
 		}
+
 		if s.query.List.IsStarExpr() {
 			record, err = s.client.Get(as.NewPolicy(), keys[0])
 		} else {
@@ -258,7 +270,14 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	default:
 		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		recs := make([]*as.Record, 0)
-		if s.mapBin != "" {
+		switch s.mapBin {
+		case "":
+			for i, _ := range records {
+				if records[i] != nil {
+					recs = append(recs, records[i])
+				}
+			}
+		default:
 			for i, _ := range records {
 				if records[i] != nil {
 					if err = s.handleBinResult(records[i], &recs); err != nil {
@@ -266,16 +285,10 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 					}
 				}
 			}
-			rows.rowsReader = newRowsReader(records)
-			return rows, nil
 		}
 
-		for i, _ := range records {
-			if records[i] != nil {
-				recs = append(recs, records[i])
-			}
-		}
 		rows.rowsReader = newRowsReader(recs)
+
 		if err != nil {
 			if IsKeyNotFound(err) {
 				return rows, nil
@@ -304,6 +317,17 @@ func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) er
 					continue
 				}
 			}
+
+			if s.mapBinFilter != nil {
+				mapBinKeyInt, ok := mapKey.(int)
+				if !ok {
+					return fmt.Errorf("unsupported type for between operator - got: %T expected %T", mapKey, mapBinKeyInt)
+				}
+				if mapBinKeyInt < s.mapBinFilter.begin || mapBinKeyInt > s.mapBinFilter.end {
+					continue
+				}
+			}
+
 			entry, ok := v.(map[interface{}]interface{})
 			if !ok {
 				return fmt.Errorf("invalid map bin entry value: %v", v)
@@ -361,32 +385,55 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		case "pk", pkName:
 			s.pkValues = exprValues
 		case "key", keyName:
-			s.keyValues = exprValues
+
+			switch strings.ToLower(operator) {
+			case "=", "in":
+				s.keyValues = exprValues
+			case "between":
+				if len(exprValues) != 2 {
+					return fmt.Errorf("invalid criteria - between expects 2 values")
+				}
+
+				from, ok := exprValues[0].(int)
+				if !ok {
+					return fmt.Errorf("unable to get int value from criteria value %v", exprValues[0])
+				}
+
+				to, ok := exprValues[1].(int)
+				if !ok {
+					return fmt.Errorf("unable to get int value from criteria value %v", exprValues[1])
+				}
+
+				s.mapBinFilter = &MapBinFilter{
+					name:  name,
+					begin: from,
+					end:   to,
+				}
+				//Filter add range operator
+			//case "like":
+			default:
+				return fmt.Errorf("unsupported operator of a mapbin key: %s", operator)
+			}
 		default:
 			if !includeFilter {
 				return fmt.Errorf("unsupported criteria: %s", name)
 			}
 			switch strings.ToLower(operator) {
-			case "between":
+			case "between": //TODO use asfilter
 				if len(exprValues) != 2 {
 					return fmt.Errorf("invalid criteria values")
 				}
-				exprVal0, ok := exprValues[0].(expr.Value)
+
+				from, ok := exprValues[0].(int)
 				if !ok {
-					return fmt.Errorf("invalid criteria type expected %T but had %T", expr.Value{}, exprValues[0])
+					return fmt.Errorf("unable to get int value from criteria value %v", exprValues[0])
 				}
-				exprVal1, ok := exprValues[1].(expr.Value)
+
+				to, ok := exprValues[1].(int)
 				if !ok {
-					return fmt.Errorf("invalid criteria type expected %T but had %T", expr.Value{}, exprValues[1])
+					return fmt.Errorf("unable to get int value from criteria value %v", exprValues[1])
 				}
-				from, ok := exprVal0.AsInt()
-				if !ok {
-					return fmt.Errorf("unable to get int value from criteria value %v", exprVal0)
-				}
-				to, ok := exprVal1.AsInt()
-				if !ok {
-					return fmt.Errorf("unable to get int value from criteria value %v", exprVal1)
-				}
+
 				s.filter = as.NewRangeFilter(name, int64(from), int64(to))
 				//Filter add range operator
 			case "like":
@@ -474,4 +521,10 @@ func IsKeyNotFound(err error) bool {
 
 	}
 	return aeroError.ResultCode() == types.KEY_NOT_FOUND_ERROR
+}
+
+type MapBinFilter struct {
+	name  string
+	begin int
+	end   int
 }

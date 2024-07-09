@@ -10,7 +10,7 @@ import (
 
 func BenchmarkStatement_ExecContext_BatchInsert(b *testing.B) {
 	data := perfTestData()
-	namespace := "test"
+	namespace := "udb"
 	values := strings.Repeat("(?, ?, ?, ?, ?),", len(data))
 	SQL := "INSERT INTO PerfTest$Values (id, seq, active, quantity, value) VALUES" + values[:len(values)-1]
 
@@ -41,6 +41,18 @@ func BenchmarkStatement_ExecContext_BatchInsert(b *testing.B) {
 	}
 }
 
+/*
+-- Create a secondary index on the keys of the map_bin bin in the test.example_set_2 set
+CREATE INDEX map_key_index ON test.example_set_2 (map_bin) MAPKEYS STRING;
+
+-- Create a secondary index on the values of the map_bin bin in the test.example_set_2 set
+CREATE INDEX map_value_index ON test.example_set_2 (map_bin) MAPVALUES NUMERIC;
+
+
+CREATE INDEX map_key_index ON udb.PerfTest (Values) MAPKEYS STRING;
+CREATE INDEX map_value_index ON udb.PerfTest (Values) MAPVALUES NUMERIC;
+*/
+
 func BenchmarkStatement_ExecContext_BatchMerge(b *testing.B) {
 	/*  feature_value->1.. 100 000
 	 *  pk:date, mod(%100) 500
@@ -50,7 +62,7 @@ func BenchmarkStatement_ExecContext_BatchMerge(b *testing.B) {
 		signals -> date, secofday (5min interval), feature_type, feature_value, count
 	*/
 	data := perfTestData()
-	namespace := "test"
+	namespace := "udb"
 	values := strings.Repeat("(?, ?, ?, ?, ?),", len(data))
 	SQL := "INSERT INTO PerfTest$Values (id, seq, active, quantity, value) VALUES" + values[:len(values)-1] + " AS new ON DUPLICATE KEY UPDATE active = active + new.active, quantity = quantity + new.quantity, value = value + new.value"
 
