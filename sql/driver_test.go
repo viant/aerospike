@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"sort"
 	"testing"
+	"time"
 )
 
 func Test_ExecContext(t *testing.T) {
@@ -50,25 +51,10 @@ func Test_ExecContext(t *testing.T) {
 	}
 }
 
-// ID or PK option for that
-/*
-	SELECT * FROM Foo$ WHERE PK = 1
-	SELECT * FROM Foo$Bin WHERE PK = 'PK'
-	SELECT Foo$Bin FROM Foo WHERE PK = 'PK'
-	SELECT * FROM Foo$MapBin WHERE PK = 'PK'
-	SELECT * FROM Foo$MapBin WHERE PK = 'value'
-	SELECT * FROM Foo$MapBin WHERE PK = 'value' AND KEY = 'key1'
-
-	SELECT * FROM Foo, UNNEST(Foo.MapBin) WHERE PK = 'value' AND KEY = 'key1'
-	SELECT PK.Bins.* FROM Foo$MapBin Bins WHERE PK = 'value' AND KEY = 'key1
-*/
-
 func Test_QueryContext(t *testing.T) {
 	namespace := "test"
-	//namespace := "udb"
-	//namespace := "udb"
 	type Foo struct {
-		Id   int //`aql:"id,key=true"
+		Id   int
 		Name string
 	}
 
@@ -76,6 +62,33 @@ func Test_QueryContext(t *testing.T) {
 		Id   int    `aerospike:"id,pk=true" `
 		Seq  int    `aerospike:"seq,listKey=true" `
 		Body string `aerospike:"body"`
+	}
+	type Baz struct {
+		Id   int       `aerospike:"id,pk=true"`
+		Seq  int       `aerospike:"seq,key=true" `
+		Name string    `aerospike:"name"`
+		Time time.Time `aerospike:"time"`
+	}
+
+	type BazPtr struct {
+		Id   int        `aerospike:"id,pk=true"`
+		Seq  int        `aerospike:"seq,key=true" `
+		Name string     `aerospike:"name"`
+		Time *time.Time `aerospike:"time"`
+	}
+
+	type BazUnix struct {
+		Id   int       `aerospike:"id,pk=true"`
+		Seq  int       `aerospike:"seq,key=true" `
+		Name string    `aerospike:"name"`
+		Time time.Time `aerospike:"time,unixsec"`
+	}
+
+	type Qux struct {
+		Id   int      `aerospike:"id,pk=true"`
+		Seq  int      `aerospike:"seq,key=true"`
+		Name string   `aerospike:"name"`
+		List []string `aerospike:"list"`
 	}
 
 	type Doc struct {
@@ -103,6 +116,10 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
 		{SQL: "REGISTER SET SimpleAgg AS ?", params: []interface{}{SimpleAgg{}}},
 		{SQL: "REGISTER SET Agg AS ?", params: []interface{}{Agg{}}},
+		{SQL: "REGISTER SET Baz AS ?", params: []interface{}{Baz{}}},
+		{SQL: "REGISTER SET BazUnix AS ?", params: []interface{}{BazUnix{}}},
+		{SQL: "REGISTER SET Qux AS ?", params: []interface{}{Qux{}}},
+		{SQL: "REGISTER SET BazPtr AS ?", params: []interface{}{BazPtr{}}},
 		{SQL: "REGISTER SET Msg AS ?", params: []interface{}{Message{}}},
 	}
 
@@ -113,12 +130,33 @@ func Test_QueryContext(t *testing.T) {
 		execParams  []interface{}
 		querySQL    string
 		init        []string
+		initParams  [][]interface{}
 		queryParams []interface{}
 		expect      interface{}
 		skip        bool
 		scanner     func(r *sql.Rows) (interface{}, error)
 	}{
 
+		{
+			description: "batch insert",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "INSERT INTO SimpleAgg(id,amount) VALUES(?,?),(?,?)",
+			execParams:  []interface{}{1, 10, 2, 20},
+			querySQL:    "SELECT id,amount FROM SimpleAgg WHERE PK IN(?, ?)",
+			queryParams: []interface{}{1, 2},
+			init: []string{
+				"DELETE FROM SimpleAgg",
+			},
+			expect: []interface{}{
+				&SimpleAgg{Id: 1, Amount: 10},
+				&SimpleAgg{Id: 2, Amount: 20},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := SimpleAgg{}
+				err := r.Scan(&agg.Id, &agg.Amount)
+				return &agg, err
+			},
+		},
 		{
 			description: "list insert",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -143,13 +181,8 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "batch merge with map",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			/*
-				execSQL:     "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
-				execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
-			*/
-			execSQL:    "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
-			execParams: []interface{}{1, 1, 11, 111, 1, 2, 12, 121},
-
+			execSQL:     "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
+			execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
 			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
@@ -242,26 +275,7 @@ func Test_QueryContext(t *testing.T) {
 				return &agg, err
 			},
 		},
-		{
-			description: "batch insert",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO SimpleAgg(id,amount) VALUES(?,?),(?,?)",
-			execParams:  []interface{}{1, 10, 2, 20},
-			querySQL:    "SELECT id,amount FROM SimpleAgg WHERE PK IN(?, ?)",
-			queryParams: []interface{}{1, 2},
-			init: []string{
-				"DELETE FROM SimpleAgg",
-			},
-			expect: []interface{}{
-				&SimpleAgg{Id: 1, Amount: 10},
-				&SimpleAgg{Id: 2, Amount: 20},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				agg := SimpleAgg{}
-				err := r.Scan(&agg.Id, &agg.Amount)
-				return &agg, err
-			},
-		},
+
 		// TODO
 		{
 			description: "update map bin with inc ",
@@ -575,13 +589,376 @@ func Test_QueryContext(t *testing.T) {
 				return &doc, err
 			},
 		},
+		{
+			description: "get 1 record by PK with 1 bin map values by key and between operator",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 101, 101},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 0 bin map values by key and between operator",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 900, 901},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 0 records by PK with 0 bin map values by key and between operator",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{901, 900, 901},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 1 bin map values by key",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 101},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 0 bin map values by key",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 901},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 0 record by PK with 0 bin map values by key",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{900, 901},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 2 bin map values by key list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 104,'doc4')",
+			},
+			queryParams: []interface{}{1, 101, 104},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+				&Doc{Id: 1, Seq: 104, Name: "doc4"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 1 bin map values by key list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 101, 904},
+			expect: []interface{}{
+				&Doc{Id: 1, Seq: 101, Name: "doc2"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 0 bin map values by key list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{1, 901, 904},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 0 record by PK with 0 bin map values by key list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			init: []string{
+				"DELETE FROM Doc",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+			},
+			queryParams: []interface{}{900, 901, 904},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				doc := Doc{}
+				err := r.Scan(&doc.Id, &doc.Seq, &doc.Name)
+				return &doc, err
+			},
+		},
+		{
+			description: "get 1 record with all bins by PK with string list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT * FROM Qux WHERE PK = ?",
+			init: []string{
+				"DELETE FROM Qux",
+				"INSERT INTO Qux(id,seq,name,list) VALUES(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, 1, "List of strings 1", []string{"item1", "item2", "item3"}},
+			},
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Qux{Id: 1, Seq: 1, Name: "List of strings 1", List: []string{"item1", "item2", "item3"}},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				qux := Qux{}
+				err := r.Scan(&qux.Id, &qux.Seq, &qux.Name, &qux.List)
+				return &qux, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 1 bin map value by key with string list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM Qux",
+				"INSERT INTO Qux$Bars(id,seq,name,list) VALUES(?,?,?,?)",
+				"INSERT INTO Qux$Bars(id,seq,name,list) VALUES(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, 1, "List of strings 1", []string{"item1", "item2", "item3"}},
+				{1, 2, "List of strings 2", []string{"item11", "item22", "item33"}},
+			},
+			querySQL:    "SELECT id, seq, name, list FROM Qux$Bars WHERE PK = ? AND KEY = ?",
+			queryParams: []interface{}{1, 2},
+			expect: []interface{}{
+				&Qux{Id: 1, Seq: 2, Name: "List of strings 2", List: []string{"item11", "item22", "item33"}},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				qux := Qux{}
+				err := r.Scan(&qux.Id, &qux.Seq, &qux.Name, &qux.List)
+				return &qux, err
+			},
+		},
+		{
+			description: "get 1 record with all bins by PK - with time value stored as string",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM Baz",
+				"INSERT INTO Baz(id,seq,name,time) VALUES(1,1,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO Baz(id,seq,name,time) VALUES(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{},
+				{2, 2, "Time formatted stored as string", "2021-01-06T05:00:00Z"},
+			},
+			querySQL:    "SELECT * FROM Baz WHERE PK = ?",
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Baz{Id: 1, Seq: 1, Name: "Time formatted stored as string", Time: getTime("2021-01-06T05:00:00Z")},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				baz := Baz{}
+				err := r.Scan(&baz.Id, &baz.Seq, &baz.Name, &baz.Time)
+				return &baz, err
+			},
+		},
+		{
+			description: "get 1 record by PK with 2 bin map values by key - with time value stored as string",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM Baz",
+				"INSERT INTO Baz$Bars(id,seq,name,time) VALUES(?,?,?,?)",
+				"INSERT INTO Baz$Bars(id,seq,name,time) VALUES(1,2,'Time formatted stored as string 2','2021-01-06T05:00:00Z')",
+				"INSERT INTO Baz$Bars(id,seq,name,time) VALUES(1,3,'Time formatted stored as string 3','2021-01-08T09:10:11Z')",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, 1, "Time formatted stored as string 1", "2021-01-06T05:04:03Z"},
+				{},
+				{},
+			},
+			querySQL:    "SELECT id, seq, name, time FROM Baz$Bars WHERE PK = ? AND KEY IN (?,?)",
+			queryParams: []interface{}{1, 1, 2},
+			expect: []interface{}{
+				&Baz{Id: 1, Seq: 1, Name: "Time formatted stored as string 1", Time: getTime("2021-01-06T05:04:03Z")},
+				&Baz{Id: 1, Seq: 2, Name: "Time formatted stored as string 2", Time: getTime("2021-01-06T05:00:00Z")},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				baz := Baz{}
+				err := r.Scan(&baz.Id, &baz.Seq, &baz.Name, &baz.Time)
+				return &baz, err
+			},
+		},
+		{
+			description: "get 1 record with all bins by PK - with time value stored as int",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM BazUnix",
+				"INSERT INTO BazUnix(id,seq,name,time) VALUES(?,?,?,?)",
+				"INSERT INTO BazUnix(id,seq,name,time) VALUES(2,2,'Time stored as int 2','2021-01-07T06:05:04Z')",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, 1, "Time stored as int", getTime("2021-01-06T05:00:00Z")},
+				{},
+			},
+			querySQL:    "SELECT * FROM BazUnix WHERE PK = ?",
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&BazUnix{Id: 1, Seq: 1, Name: "Time stored as int", Time: getTime("2021-01-06T05:00:00Z").In(time.Local)},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				baz := BazUnix{}
+				err := r.Scan(&baz.Id, &baz.Seq, &baz.Name, &baz.Time)
+				return &baz, err
+			},
+		},
+		{
+			description: "get 1 records by PK with 2 bin map values by key - with time value stored as int",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM BazUnix",
+				"INSERT INTO BazUnix$Bars(id,seq,name,time) VALUES(1,1,'Time stored as int 3','2021-01-06T05:00:00Z')",
+				"INSERT INTO BazUnix$Bars(id,seq,name,time) VALUES(?,?,?,?)",
+				"INSERT INTO BazUnix$Bars(id,seq,name,time) VALUES(1,3,'Time stored as int 5','2021-02-03T04:05:06Z')",
+			},
+			initParams: [][]interface{}{
+				{},
+				{},
+				{1, 2, "Time stored as int 4", getTime("2021-02-03T04:05:06Z")},
+				{},
+			},
+			querySQL:    "SELECT id, seq, name, time FROM BazUnix$Bars WHERE PK = ? AND KEY IN (?,?)",
+			queryParams: []interface{}{1, 1, 2},
+			expect: []interface{}{
+				&BazUnix{Id: 1, Seq: 1, Name: "Time stored as int 3", Time: getTime("2021-01-06T05:00:00Z").In(time.Local)},
+				&BazUnix{Id: 1, Seq: 2, Name: "Time stored as int 4", Time: getTime("2021-02-03T04:05:06Z").In(time.Local)},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				baz := BazUnix{}
+				err := r.Scan(&baz.Id, &baz.Seq, &baz.Name, &baz.Time)
+				return &baz, err
+			},
+		},
+		{
+			description: "get 1 record with all bins by PK - with time value stored as string, time ptr in type",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM BazPtr",
+				"INSERT INTO BazPtr(id,seq,name,time) VALUES(1,1,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO BazPtr(id,seq,name,time) VALUES(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{},
+				{2, 2, "Time formatted stored as string", "2021-01-06T05:00:00Z"},
+			},
+			querySQL:    "SELECT * FROM BazPtr WHERE PK = ?",
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&BazPtr{Id: 1, Seq: 1, Name: "Time formatted stored as string", Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bazPtr := BazPtr{}
+				err := r.Scan(&bazPtr.Id, &bazPtr.Seq, &bazPtr.Name, &bazPtr.Time)
+				return &bazPtr, err
+			},
+		},
 	}
 
 	ctx := context.Background()
-	//for _, tc := range testCases[0:1] {
 	for _, tc := range testCases {
-		fmt.Printf("running test: %v\n", tc.description)
+		//for _, tc := range testCases[0:1] {
 		//for _, tc := range testCases[len(testCases)-1:] {
+		fmt.Printf("running test: %v\n", tc.description)
+
 		t.Run(tc.description, func(t *testing.T) {
 
 			if tc.skip {
@@ -598,7 +975,7 @@ func Test_QueryContext(t *testing.T) {
 					return
 				}
 			}
-			err = initDb(ctx, db, tc.init)
+			err = initDb(ctx, db, tc.init, tc.initParams)
 			if !assert.Nil(t, err, tc.description) {
 				fmt.Println("initDb ERROR: ", err.Error())
 				return
@@ -631,9 +1008,13 @@ func Test_QueryContext(t *testing.T) {
 	}
 }
 
-func initDb(ctx context.Context, db *sql.DB, init []string) error {
-	for _, SQL := range init {
-		_, err := db.ExecContext(ctx, SQL)
+func initDb(ctx context.Context, db *sql.DB, init []string, initParams [][]interface{}) error {
+	for i, SQL := range init {
+		args := make([]interface{}, len(initParams))
+		if len(initParams) != 0 {
+			args = initParams[i]
+		}
+		_, err := db.ExecContext(ctx, SQL, args...)
 		if err != nil {
 			return err
 		}
@@ -641,42 +1022,14 @@ func initDb(ctx context.Context, db *sql.DB, init []string) error {
 	return nil
 }
 
-type entry struct {
-	pk     interface{}
-	set    string
-	binMap map[string]interface{}
+func getTime(formattedTime string) time.Time {
+	result, err := time.Parse(time.RFC3339, formattedTime)
+	if err != nil {
+		result = time.Time{}
+	}
+	return result
 }
 
-/*
-feature_value -> 1 .. 100,000
-secofday, count
-set: feature_type -> viant-taxonomy
-
-signals -> date, secofday (5min interval), feature_type, feature_value, count
-*/
-
-/// TODO START
-//		{
-//			description: "batch get - few records by PK with a few bin map values",
-//			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-//			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK IN(?, ?, ?) AND KEY = ?", // TODO IN(?)
-//			queryParams: []interface{}{0, 2, 3, 200},
-//			init: []string{
-//				"DELETE FROM Doc",
-//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc100')",
-//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc101')",
-//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(2, 200,'doc200')",
-//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(2, 201,'doc201')",
-//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(3, 300,'doc300')",
-//				"INSERT INTO Doc$Bars(id, seq, name) VALUES(3, 301,'doc301')",
-//			},
-//			expect: []interface{}{
-//				&Doc{Id: 2, Seq: 200, Name: "doc200"},
-//			},
-//			scanner: func(r *sql.Rows) (interface{}, error) {
-//				foo := Foo{}
-//				err := r.Scan(&foo.Id, &foo.Name)
-//				return &foo, err
-//			},
-//		},
-/// TODO STOP
+func getTimePtr(t time.Time) *time.Time {
+	return &t
+}

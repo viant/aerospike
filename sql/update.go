@@ -53,7 +53,10 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 					addValue = args[j].Value
 					j++
 				}
-				addValue = aField.ensureValidValueType(addValue)
+				addValue, err = aField.ensureValidValueType(addValue)
+				if err != nil {
+					return err
+				}
 				if binary.Op == "+" {
 					addBins[aField.Column()] = addValue
 				} else {
@@ -73,7 +76,10 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 			} else {
 				value = itemValue.Value
 			}
-			value = aField.ensureValidValueType(value)
+			value, err = aField.ensureValidValueType(value)
+			if err != nil {
+				return err
+			}
 			putBins[aField.Column()] = value
 		}
 	}

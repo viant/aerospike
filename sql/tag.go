@@ -10,9 +10,10 @@ import (
 type Tag struct {
 	Name      string
 	IsPK      bool
-	IsListKey bool
 	IsMapKey  bool
+	IsListKey bool
 	Ignore    bool
+	UnixSec   bool
 }
 
 func (t *Tag) updateTagKey(key, value string) error {
@@ -22,14 +23,6 @@ func (t *Tag) updateTagKey(key, value string) error {
 		t.Ignore = true
 	case "name":
 		t.Name = value
-	case "listkey":
-		if value == "" {
-			t.IsListKey = true
-		} else {
-			if t.IsListKey, err = strconv.ParseBool(value); err != nil {
-				return err
-			}
-		}
 	case "pk":
 		if value == "" {
 			t.IsPK = true
@@ -38,10 +31,22 @@ func (t *Tag) updateTagKey(key, value string) error {
 				return err
 			}
 		}
+	case "listkey":
+		if value == "" {
+			t.IsListKey = true
+		} else if t.IsListKey, err = strconv.ParseBool(value); err != nil {
+			return err
+		}
 	case "key":
 		if value == "" {
 			t.IsMapKey = true
 		} else if t.IsMapKey, err = strconv.ParseBool(value); err != nil {
+			return err
+		}
+	case "unixsec":
+		if value == "" {
+			t.UnixSec = true
+		} else if t.UnixSec, err = strconv.ParseBool(value); err != nil {
 			return err
 		}
 	default:

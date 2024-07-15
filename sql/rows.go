@@ -69,7 +69,7 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 		srcType := reflect.TypeOf(value)
 		if srcType.AssignableTo(aField.Type) {
 			aField.Set(ptr, value)
-		} else if srcType.Kind() == aField.Kind() {
+		} else if srcType.Kind() == aField.Kind() && (srcType.Kind() != reflect.Ptr && srcType.Kind() != reflect.Struct && srcType.Kind() != reflect.Slice) {
 			aField.Set(ptr, reflect.ValueOf(value).Convert(aField.Type).Interface())
 		} else {
 			if aField.setter == nil {
@@ -79,9 +79,11 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 				//TODO add support for struct, slice of structs
 				return fmt.Errorf("failed to find setter for %v", aField.Type)
 			}
-			if err := aField.setter(value, aField.Field, xunsafe.AsPointer(value)); err != nil {
+			if err := aField.setter(value, aField.Field, ptr); err != nil {
 				return err
 			}
+			dest[i] = aField.Value(ptr)
+			continue
 		}
 		dest[i] = aField.Value(ptr)
 	}

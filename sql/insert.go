@@ -306,7 +306,10 @@ func (s *Statement) populateInsertBins(args []driver.NamedValue, argIndex *int) 
 			value = val.Value
 
 		}
-		value = aField.ensureValidValueType(value)
+		value, err := aField.ensureValidValueType(value)
+		if err != nil {
+			return nil, err
+		}
 		bins[aField.Column()] = value
 	}
 	return bins, nil
