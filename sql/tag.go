@@ -12,6 +12,7 @@ type Tag struct {
 	IsPK     bool
 	IsMapKey bool
 	Ignore   bool
+	UnixSec  bool
 }
 
 func (t *Tag) updateTagKey(key, value string) error {
@@ -33,6 +34,12 @@ func (t *Tag) updateTagKey(key, value string) error {
 		if value == "" {
 			t.IsMapKey = true
 		} else if t.IsMapKey, err = strconv.ParseBool(value); err != nil {
+			return err
+		}
+	case "unixsec":
+		if value == "" {
+			t.UnixSec = true
+		} else if t.UnixSec, err = strconv.ParseBool(value); err != nil {
 			return err
 		}
 	default:

@@ -9,7 +9,11 @@ import (
 	"github.com/viant/xunsafe"
 	"reflect"
 	"strings"
+	"time"
 )
+
+var timeType = reflect.TypeOf(time.Time{})
+var timePtrType = reflect.TypeOf(&time.Time{})
 
 type (
 	field struct {
@@ -28,17 +32,38 @@ type (
 	}
 )
 
-func (f *field) ensureValidValueType(value interface{}) interface{} {
+func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 	valueType := reflect.TypeOf(value)
 	if valueType.Kind() == f.Type.Kind() {
-		return value
+		if valueType == timeType {
+			v, ok := value.(time.Time)
+			if !ok {
+				return nil, fmt.Errorf("unable to ensure valid value type - invalid type %T expected %T", value, v)
+			}
+			if f.tag.UnixSec {
+				value = v.Unix()
+			}
+		}
+		return value, nil
 	}
-	if valueType.AssignableTo(valueType) {
+
+	if valueType.AssignableTo(f.Type) {
 		value = reflect.ValueOf(value).Convert(f.Type).Interface()
 	} else {
-		//TODO add extra converson logic
+		// TODO add extra converson logic
+		// TODO check pointers
+		if f.Type == timeType && valueType.Kind() == reflect.String {
+			v, err := time.Parse(time.RFC3339, value.(string))
+			if err != nil {
+				return nil, fmt.Errorf("unable to ensure valid value type due to: %w", err)
+			}
+
+			if f.tag.UnixSec {
+				value = v.Unix()
+			}
+		}
 	}
-	return value
+	return value, nil
 }
 
 func (f *field) Column() string {

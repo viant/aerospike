@@ -77,9 +77,11 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 				//TODO add support for struct, slice of structs
 				return fmt.Errorf("failed to find setter for %v", aField.Type)
 			}
-			if err := aField.setter(value, aField.Field, xunsafe.AsPointer(value)); err != nil {
+			if err := aField.setter(value, aField.Field, ptr); err != nil {
 				return err
 			}
+			dest[i] = aField.Value(ptr)
+			continue
 		}
 		dest[i] = aField.Value(ptr)
 	}
