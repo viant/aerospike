@@ -21,6 +21,9 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 	if s.update == nil {
 		return fmt.Errorf("insert statement is not initialized")
 	}
+	//TODO update me
+	s.affected = 1
+
 	var operates []*as.Operation
 	j := 0
 	var putBins = map[string]interface{}{}

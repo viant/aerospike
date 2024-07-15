@@ -8,10 +8,11 @@ import (
 )
 
 type Tag struct {
-	Name     string
-	IsPK     bool
-	IsMapKey bool
-	Ignore   bool
+	Name      string
+	IsPK      bool
+	IsListKey bool
+	IsMapKey  bool
+	Ignore    bool
 }
 
 func (t *Tag) updateTagKey(key, value string) error {
@@ -21,6 +22,14 @@ func (t *Tag) updateTagKey(key, value string) error {
 		t.Ignore = true
 	case "name":
 		t.Name = value
+	case "listkey":
+		if value == "" {
+			t.IsListKey = true
+		} else {
+			if t.IsListKey, err = strconv.ParseBool(value); err != nil {
+				return err
+			}
+		}
 	case "pk":
 		if value == "" {
 			t.IsPK = true

@@ -162,6 +162,47 @@ func (s *Statement) identifyAddSubColumn() (map[string]bool, map[string]bool, er
 	return addColumn, subColumn, nil
 }
 
+func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) error {
+	var argIndex int
+	var operations = map[interface{}][]*as.Operation{}
+
+	for i := 0; i < itemCount; i++ {
+		bins, err := s.populateInsertBins(args, &argIndex)
+		if err != nil {
+			return err
+		}
+		keyValue := s.getKey(s.mapper.pk, bins)
+		delete(bins, s.mapper.pk[0].Column())
+		operations[keyValue] = append(operations[keyValue], as.ListAppendOp(s.listBin, bins))
+	}
+	for keyValue, operations := range operations {
+		key, err := as.NewKey(s.namespace, s.set, keyValue)
+		if err != nil {
+			return err
+		}
+		operations = append(operations, as.PutOp(as.NewBin(s.mapper.pk[0].Column(), keyValue)))
+		writePolicy := as.NewWritePolicy(0, 0)
+		writePolicy.SendKey = true
+		ret, err := s.client.Operate(writePolicy, key, operations...)
+		if err != nil {
+			return err
+		}
+		rawSize, ok := ret.Bins[s.listBin]
+		if !ok {
+			return fmt.Errorf("failed to insert list value")
+		}
+		switch actual := rawSize.(type) {
+		case int:
+			lastInsertID := int64(actual - 1)
+			s.lastInsertID = &lastInsertID
+		case []interface{}:
+			lastInsertID := int64(actual[len(actual)-1].(int))
+			s.lastInsertID = &lastInsertID
+		}
+	}
+	return nil
+}
+
 func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	if s.insert == nil {
 		return fmt.Errorf("insert statement is not initialized")
@@ -172,6 +213,7 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	isMerge := len(s.insert.OnDuplicateKeyUpdate) > 0
 
 	batchCount := len(s.insert.Values) / len(s.insert.Columns)
+	s.affected = int64(batchCount)
 	if batchCount > 1 {
 		if s.mapBin != "" {
 			if len(s.mapper.key) == 0 {
@@ -180,6 +222,11 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 			return s.handleMapLoad(args)
 		}
 	}
+
+	if s.listBin != "" {
+		return s.handleListInsert(args, batchCount)
+	}
+
 	argIndex := 0
 	for b := 0; b < batchCount; b++ {
 		bins, err := s.populateInsertBins(args, &argIndex)

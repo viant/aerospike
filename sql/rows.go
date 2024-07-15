@@ -62,13 +62,15 @@ func (r *Rows) Next(dest []driver.Value) error {
 
 func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr unsafe.Pointer) error {
 	for i, aField := range r.mapper.fields {
-		value, ok := record.Bins[aField.tag.Name]
+		value, ok := record.Bins[aField.Column()]
 		if !ok {
 			continue
 		}
 		srcType := reflect.TypeOf(value)
 		if srcType.AssignableTo(aField.Type) {
 			aField.Set(ptr, value)
+		} else if srcType.Kind() == aField.Kind() {
+			aField.Set(ptr, reflect.ValueOf(value).Convert(aField.Type).Interface())
 		} else {
 			if aField.setter == nil {
 				aField.setter = structology.LookupSetter(srcType, aField.Type)

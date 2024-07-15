@@ -28,24 +28,28 @@ type Statement struct {
 	client *as.Client
 	cfg    *Config
 	//BaseURL    string
-	SQL          string
-	kind         sqlparser.Kind
-	types        *x.Registry
-	query        *query.Select
-	insert       *insert.Statement
-	update       *update.Statement
-	delete       *delete.Statement
-	mapper       *mapper
-	filter       *as.Filter
-	mapBinFilter *MapBinFilter
-	recordType   reflect.Type
-	record       interface{}
-	numInput     int
-	set          string
-	mapBin       string
-	namespace    string
-	pkValues     []interface{}
-	keyValues    []interface{}
+	SQL           string
+	kind          sqlparser.Kind
+	types         *x.Registry
+	query         *query.Select
+	insert        *insert.Statement
+	update        *update.Statement
+	delete        *delete.Statement
+	mapper        *mapper
+	filter        *as.Filter
+	mapBinFilter  *rangeFilter
+	listBinFilter *rangeFilter
+	recordType    reflect.Type
+	record        interface{}
+	numInput      int
+	set           string
+	mapBin        string
+	listBin       string
+	namespace     string
+	pkValues      []interface{}
+	keyValues     []interface{}
+	lastInsertID  *int64
+	affected      int64
 }
 
 // Exec executes statements
@@ -64,12 +68,15 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 		return nil, s.handleUpdate(args)
 	case sqlparser.KindDelete:
 		return nil, s.handleDelete(args)
-	case sqlparser.KindMerge:
-
 	case sqlparser.KindSelect:
 		return nil, fmt.Errorf("unsupported query type: %v", s.kind)
 	}
-	return nil, nil //TODO error - unsupported kind?
+
+	if s.lastInsertID != nil {
+		return &result{totalRows: s.affected, lastInsertedID: *s.lastInsertID, hasLastInsertedID: true}, nil
+	}
+
+	return &result{totalRows: s.affected}, nil //TODO error - unsupported kind?
 }
 
 // Query runs query
@@ -194,6 +201,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	//var err error
 	if aType := s.types.Lookup(s.set); aType != nil {
 		s.recordType = aType.Type
+
 	} else {
 		return nil, fmt.Errorf("executeselect: unable to lookup type with name %s", s.set)
 	}
@@ -236,6 +244,11 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		for i, field := range aMapper.fields {
 			bins[i] = field.Column()
 		}
+
+		if s.listBin != "" {
+			bins = append(bins, s.listBin)
+		}
+
 		if s.mapBin != "" {
 			bins = append(bins, s.mapBin)
 			if s.mapBinFilter != nil {
@@ -266,9 +279,19 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 			return nil, err
 		}
+
+		if s.listBin != "" {
+			records := make([]*as.Record, 0)
+			if err = s.handleListBinResult(record, &records, true); err != nil {
+				return nil, err
+			}
+			rows.rowsReader = newRowsReader(records)
+			return rows, nil
+		}
+
 		if s.mapBin != "" {
 			records := make([]*as.Record, 0)
-			if err = s.handleBinResult(record, &records); err != nil {
+			if err = s.handleMapBinResult(record, &records); err != nil {
 				return nil, err
 			}
 			rows.rowsReader = newRowsReader(records)
@@ -278,24 +301,33 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	default:
 		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		recs := make([]*as.Record, 0)
-		switch s.mapBin {
-		case "":
+
+		if s.mapBin != "" {
 			for i, _ := range records {
 				if records[i] != nil {
-					recs = append(recs, records[i])
-				}
-			}
-		default:
-			for i, _ := range records {
-				if records[i] != nil {
-					e := s.handleBinResult(records[i], &recs)
+					e := s.handleMapBinResult(records[i], &recs)
 					if e != nil {
 						return nil, err
 					}
 				}
 			}
-		}
+		} else if s.listBin != "" {
+			for i, _ := range records {
+				if records[i] != nil {
+					e := s.handleListBinResult(records[i], &recs, true)
+					if e != nil {
+						return nil, err
+					}
+				}
+			}
 
+		} else {
+			for i, _ := range records {
+				if records[i] != nil {
+					recs = append(recs, records[i])
+				}
+			}
+		}
 		rows.rowsReader = newRowsReader(recs)
 
 		if err != nil {
@@ -308,7 +340,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	return rows, nil
 }
 
-func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) error {
+func (s *Statement) handleMapBinResult(record *as.Record, records *[]*as.Record) error {
 	if mapBin, ok := record.Bins[s.mapBin]; ok {
 		mapBinMap, ok := mapBin.(map[interface{}]interface{})
 		if !ok {
@@ -347,6 +379,44 @@ func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) er
 				record.Bins[key] = value
 			}
 			*records = append(*records, record)
+		}
+	}
+	return nil
+}
+
+func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record, applyFilter bool) error {
+	if mapBin, ok := record.Bins[s.listBin]; ok {
+		listBinSlice, ok := mapBin.([]interface{})
+		if !ok {
+			return fmt.Errorf("invalid map bin value: %v", mapBin)
+		}
+		var filter = map[interface{}]bool{}
+		if len(s.keyValues) > 0 && applyFilter {
+			for _, key := range s.keyValues {
+				filter[key] = true
+			}
+		}
+		for index, v := range listBinSlice {
+			if len(filter) > 0 {
+				if _, ok := filter[index]; !ok {
+
+				}
+			}
+			if s.listBinFilter != nil && applyFilter {
+				if index < s.listBinFilter.begin || index > s.listBinFilter.end {
+					continue
+				}
+			}
+			var itemRecord = &as.Record{Bins: map[string]interface{}{}}
+			properties := v.(map[interface{}]interface{})
+			for k, v := range properties {
+				itemRecord.Bins[k.(string)] = v
+			}
+			if _, ok := itemRecord.Bins[s.mapper.key[0].Column()]; !ok {
+				itemRecord.Bins[s.mapper.key[0].Column()] = index
+			}
+			itemRecord.Bins[s.mapper.pk[0].Column()] = record.Key.Value()
+			*records = append(*records, itemRecord)
 		}
 	}
 	return nil
@@ -413,7 +483,7 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 					return fmt.Errorf("unable to get int value from criteria value %v", exprValues[1])
 				}
 
-				s.mapBinFilter = &MapBinFilter{
+				s.mapBinFilter = &rangeFilter{
 					name:  name,
 					begin: from,
 					end:   to,
@@ -472,7 +542,7 @@ func (s *Statement) buildKeys() ([]*as.Key, error) {
 	return result, nil
 }
 
-func (s *Statement) updateSetMapper() error {
+func (s *Statement) setMapper() error {
 	var err error
 	if s.set == "" {
 		return nil
@@ -486,6 +556,10 @@ func (s *Statement) updateSetMapper() error {
 	if s.recordType != nil {
 		if s.mapper, err = newTypeBaseMapper(s.recordType); err != nil {
 			return err
+		}
+		if s.mapper.listKey {
+			s.listBin = s.mapBin
+			s.mapBin = ""
 		}
 	}
 	return err
@@ -533,7 +607,7 @@ func IsKeyNotFound(err error) bool {
 	return aeroError.ResultCode == types.KEY_NOT_FOUND_ERROR
 }
 
-type MapBinFilter struct {
+type rangeFilter struct {
 	name  string
 	begin int
 	end   int

@@ -72,6 +72,12 @@ func Test_QueryContext(t *testing.T) {
 		Name string
 	}
 
+	type Message struct {
+		Id   int    `aerospike:"id,pk=true" `
+		Seq  int    `aerospike:"seq,listKey=true" `
+		Body string `aerospike:"body"`
+	}
+
 	type Doc struct {
 		Id   int    `aerospike:"id,pk=true" `
 		Seq  int    `aerospike:"seq,key=true" `
@@ -97,6 +103,7 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
 		{SQL: "REGISTER SET SimpleAgg AS ?", params: []interface{}{SimpleAgg{}}},
 		{SQL: "REGISTER SET Agg AS ?", params: []interface{}{Agg{}}},
+		{SQL: "REGISTER SET Msg AS ?", params: []interface{}{Message{}}},
 	}
 
 	var testCases = []struct {
@@ -111,6 +118,28 @@ func Test_QueryContext(t *testing.T) {
 		skip        bool
 		scanner     func(r *sql.Rows) (interface{}, error)
 	}{
+
+		{
+			description: "list insert",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "INSERT INTO Msg$Items(id,body) VALUES(?,?),(?,?)",
+			execParams:  []interface{}{1, "test message", 1, "another message"},
+
+			querySQL:    "SELECT id,seq,body FROM Msg$Items WHERE PK = ?",
+			queryParams: []interface{}{1},
+			init: []string{
+				"DELETE FROM Msg",
+			},
+			expect: []interface{}{
+				&Message{Id: 1, Seq: 0, Body: "test message"},
+				&Message{Id: 1, Seq: 1, Body: "another message"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				msg := Message{}
+				err := r.Scan(&msg.Id, &msg.Seq, &msg.Body)
+				return &msg, err
+			},
+		},
 		{
 			description: "batch merge with map",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,

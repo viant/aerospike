@@ -20,11 +20,12 @@ type (
 	}
 
 	mapper struct {
-		fields        []field
-		collectionBin string
-		pk            []*field
-		key           []*field
-		byName        map[string]int
+		fields  []field
+		pk      []*field
+		key     []*field
+		listKey bool
+		mapKey  bool
+		byName  map[string]int
 	}
 )
 
@@ -71,8 +72,14 @@ func (t *mapper) addField(aField reflect.StructField, tag *Tag) *field {
 	idx := len(t.fields)
 	t.fields = append(t.fields, field{index: idx, Field: xunsafe.NewField(aField), tag: tag})
 	mapperField := &t.fields[idx]
-	if tag.IsMapKey {
+	if tag.IsMapKey || tag.IsListKey {
 		t.key = append(t.key, mapperField)
+		if tag.IsMapKey {
+			t.mapKey = true
+		}
+		if tag.IsListKey {
+			t.listKey = true
+		}
 	}
 	fuzzName := strings.ReplaceAll(strings.ToLower(tag.Name), "_", "")
 	t.byName[tag.Name] = idx
@@ -88,7 +95,7 @@ func newQueryMapper(recordType reflect.Type, list query.List) (*mapper, error) {
 	if list.IsStarExpr() {
 		return typeMapper, nil
 	}
-	result := &mapper{fields: make([]field, 0), byName: make(map[string]int)}
+	result := &mapper{fields: make([]field, 0), byName: make(map[string]int), listKey: typeMapper.listKey, mapKey: typeMapper.mapKey}
 	for i := 0; i < len(list); i++ {
 		item := list[i]
 		switch actual := item.Expr.(type) {
