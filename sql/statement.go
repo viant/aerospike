@@ -241,23 +241,22 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		}
 	case 1:
 		var record *as.Record
+		var op []*as.Operation
+		var result *as.Record
 
 		if s.mapBin != "" && (s.rangeFilter != nil || len(s.keyValues) > 0) {
-			var op *as.Operation
-			var result *as.Record
-
 			switch {
 			case s.rangeFilter != nil && len(s.keyValues) > 0:
 				return nil, fmt.Errorf("unsupported criteria combination: key values list and key range")
 			case s.rangeFilter != nil:
-				op = as.MapGetByKeyRangeOp(s.mapBin, s.rangeFilter.begin, s.rangeFilter.end+1, as.MapReturnType.VALUE)
+				op = append(op, as.MapGetByKeyRangeOp(s.mapBin, s.rangeFilter.begin, s.rangeFilter.end+1, as.MapReturnType.VALUE))
 			case len(s.keyValues) == 1:
-				op = as.MapGetByKeyOp(s.mapBin, s.keyValues[0], as.MapReturnType.VALUE)
+				op = append(op, as.MapGetByKeyOp(s.mapBin, s.keyValues[0], as.MapReturnType.VALUE))
 			case len(s.keyValues) > 1:
-				op = as.MapGetByKeyListOp(s.mapBin, s.keyValues, as.MapReturnType.VALUE)
+				op = append(op, as.MapGetByKeyListOp(s.mapBin, s.keyValues, as.MapReturnType.VALUE))
 			}
 
-			result, err = s.client.Operate(nil, keys[0], op)
+			result, err = s.client.Operate(nil, keys[0], op...)
 			if err != nil {
 				if IsKeyNotFound(err) {
 					rows.rowsReader = newRowsReader([]*as.Record{})
@@ -279,6 +278,51 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 			rows.rowsReader = newInterfaceReader(records)
 			return rows, nil
+		}
+
+		if s.listBin != "" && (len(s.keyValues) > 0) {
+
+			switch {
+			case s.rangeFilter != nil && len(s.keyValues) > 0:
+				return nil, fmt.Errorf("unsupported criteria combination: key rawValues list and key range")
+			case s.rangeFilter != nil:
+				return nil, fmt.Errorf("unsupported criteria combination: key rawValues list and key range")
+			case len(s.keyValues) == 1:
+				op = append(op, as.ListGetOp(s.listBin, s.keyValues[0].(int)))
+			case len(s.keyValues) > 1:
+				for j := range s.keyValues {
+					op = append(op, as.ListGetOp(s.listBin, s.keyValues[j].(int)))
+				}
+			}
+			result, err = s.client.Operate(nil, keys[0], op...)
+			if err != nil {
+				if IsKeyNotFound(err) {
+					rows.rowsReader = newRowsReader([]*as.Record{})
+					return rows, nil
+				}
+				return nil, err
+			}
+
+			rawValues, ok := result.Bins[s.listBin]
+			if ok {
+				values := rawValues.([]interface{})
+				var records []*as.Record
+				for j, value := range values {
+					if value == nil {
+						continue
+					}
+					properties := value.(map[interface{}]interface{})
+					aRecord := &as.Record{Bins: map[string]interface{}{}}
+					for k, v := range properties {
+						aRecord.Bins[k.(string)] = v
+					}
+					aRecord.Bins[s.mapper.key[0].Column()] = s.keyValues[j]
+					aRecord.Bins[s.mapper.pk[0].Column()] = s.pkValues[0]
+					records = append(records, aRecord)
+				}
+				rows.rowsReader = newRowsReader(records)
+				return rows, nil
+			}
 		}
 
 		if s.query.List.IsStarExpr() {

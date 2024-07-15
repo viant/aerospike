@@ -138,6 +138,27 @@ func Test_QueryContext(t *testing.T) {
 	}{
 
 		{
+			description: "list insert with index criteria",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "INSERT INTO Msg$Items(id,body) VALUES(?,?),(?,?),(?,?)",
+			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message"},
+
+			querySQL:    "SELECT id,seq,body FROM Msg$Items WHERE PK = ? AND KEY IN(?,?)",
+			queryParams: []interface{}{1, 0, 2},
+			init: []string{
+				"DELETE FROM Msg",
+			},
+			expect: []interface{}{
+				&Message{Id: 1, Seq: 0, Body: "test message"},
+				&Message{Id: 1, Seq: 2, Body: "last message"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				msg := Message{}
+				err := r.Scan(&msg.Id, &msg.Seq, &msg.Body)
+				return &msg, err
+			},
+		},
+		{
 			description: "batch insert",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "INSERT INTO SimpleAgg(id,amount) VALUES(?,?),(?,?)",
