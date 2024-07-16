@@ -1,9 +1,7 @@
 package sql
 
-import "github.com/viant/x"
+var globalSets = NewRegistry()
 
-var globalTypes = x.NewRegistry()
-
-func Register(aType *x.Type) {
-	globalTypes.Register(aType)
+func RegisterGlobalSet(aSet *set) error {
+	return globalSets.Register(aSet)
 }

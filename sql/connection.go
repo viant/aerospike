@@ -6,13 +6,12 @@ import (
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
-	"github.com/viant/x"
 )
 
 type connection struct {
 	cfg    *Config
 	client *as.Client
-	types  *x.Registry
+	sets   *Registry
 }
 
 // Prepare returns a prepared statement, bound to this connection.
@@ -23,11 +22,12 @@ func (c *connection) Prepare(query string) (driver.Stmt, error) {
 // PrepareContext returns a prepared statement, bound to this connection.
 func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stmt, error) {
 	kind := sqlparser.ParseKind(SQL)
-	c.types.Merge(globalTypes)
+	c.sets.Merge(globalSets)
+
 	stmt := &Statement{
 		SQL:       SQL,
 		kind:      kind,
-		types:     c.types,
+		sets:      c.sets,
 		client:    c.client,
 		cfg:       c.cfg,
 		namespace: c.cfg.namespace,
@@ -53,7 +53,7 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 		}
 	case sqlparser.KindRegisterSet:
 	default:
-		return nil, fmt.Errorf("unsupported SQL kind: %v", SQL)
+		return nil, fmt.Errorf("unsupported kind: %v for SQL: %v", kind, SQL)
 	}
 
 	if err := stmt.setMapper(); err != nil {

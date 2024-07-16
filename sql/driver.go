@@ -5,7 +5,6 @@ import (
 	"database/sql/driver"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
-	"github.com/viant/x"
 )
 
 const (
@@ -46,6 +45,6 @@ func (d Driver) Open(dsn string) (driver.Conn, error) {
 	return &connection{
 		cfg:    cfg,
 		client: client,
-		types:  x.NewRegistry(),
+		sets:   NewRegistry(),
 	}, nil
 }

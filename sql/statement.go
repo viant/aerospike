@@ -30,7 +30,7 @@ type Statement struct {
 	//BaseURL    string
 	SQL          string
 	kind         sqlparser.Kind
-	types        *x.Registry
+	sets         *Registry
 	query        *query.Select
 	insert       *insert.Statement
 	update       *update.Statement
@@ -166,10 +166,21 @@ func (s *Statement) handleRegisterSet(args []driver.NamedValue) (driver.Result, 
 	}
 	aType := x.NewType(rType, x.WithName(register.Name))
 	aType.PkgPath = ""
-	if register.Global {
-		Register(aType)
+	aSet := &set{
+		xType:  aType,
+		ttlSec: register.TTL, //TODO use TTL with WritePolicy
 	}
-	s.types.Register(aType)
+	if register.Global {
+		if err := RegisterGlobalSet(aSet); err != nil {
+			return nil, err
+		}
+	}
+
+	err = s.sets.Register(aSet)
+	if err != nil {
+		return nil, err
+	}
+
 	return &result{}, nil
 }
 
@@ -198,12 +209,11 @@ func (s *Statement) prepareDelete(sql string) error {
 }
 
 func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	//var err error
-	if aType := s.types.Lookup(s.set); aType != nil {
-		s.recordType = aType.Type
-	} else {
-		return nil, fmt.Errorf("executeselect: unable to lookup type with name %s", s.set)
+	err := s.setRecordType()
+	if err != nil {
+		return nil, err
 	}
+
 	aMapper, err := newQueryMapper(s.recordType, s.query.List) //TODO add s.mapper as parameter, don't create mapper again
 	if err != nil {
 		return nil, err
@@ -359,7 +369,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		recs := make([]*as.Record, 0)
 		if s.mapBin != "" {
-			for i, _ := range records {
+			for i := range records {
 				if records[i] != nil {
 					e := s.handleBinResult(records[i], &recs)
 					if e != nil {
@@ -371,7 +381,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			return rows, nil
 
 		} else if s.listBin != "" {
-			for i, _ := range records {
+			for i := range records {
 				if records[i] != nil {
 					e := s.handleListBinResult(records[i], &recs, true)
 					if e != nil {
@@ -435,6 +445,24 @@ func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record
 			*records = append(*records, itemRecord)
 		}
 	}
+	return nil
+}
+
+func (s *Statement) setRecordType() error {
+	aSet := s.sets.Lookup(s.set)
+	if aSet == nil {
+		return fmt.Errorf("setrecordtype: unable to lookup set with name %s", s.set)
+	}
+
+	if aSet.xType == nil {
+		return fmt.Errorf("setrecordtype: unable to lookup type with name %s", s.set)
+	}
+
+	if aSet.xType.Type == nil {
+		return fmt.Errorf("setrecordtype: rtype is nil for type with name %s", s.set)
+	}
+
+	s.recordType = aSet.xType.Type
 	return nil
 }
 
@@ -608,22 +636,21 @@ func (s *Statement) setMapper() error {
 	if s.set == "" {
 		return nil
 	}
-	if aType := s.types.Lookup(s.set); aType != nil {
-		s.recordType = aType.Type
-		s.record = reflect.New(s.recordType).Interface()
-	} else {
-		return fmt.Errorf("executeselect: unable to lookup type with name %s", s.set)
+	err = s.setRecordType()
+	if err != nil {
+		return err
 	}
-	if s.recordType != nil {
-		if s.mapper, err = newTypeBaseMapper(s.recordType); err != nil {
-			return err
-		}
+
+	s.record = reflect.New(s.recordType).Interface()
+	if s.mapper, err = newTypeBaseMapper(s.recordType); err != nil {
+		return err
 	}
 	if s.mapper.listKey {
 		s.listBin = s.mapBin
 		s.mapBin = ""
 
 	}
+
 	return err
 }
 

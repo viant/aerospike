@@ -207,6 +207,11 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	if s.insert == nil {
 		return fmt.Errorf("insert statement is not initialized")
 	}
+
+	if aType := s.sets.Lookup(s.set); aType != nil {
+		// TODO writePolicy with TTL if set
+	}
+
 	if len(s.mapper.pk) == 0 {
 		return fmt.Errorf("unable to find primary key field")
 	}

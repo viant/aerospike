@@ -11,10 +11,10 @@ import (
 )
 
 func Test_ExecContext(t *testing.T) {
-	namespace := "udb"
+	namespace := "test"
 
 	type Foo struct {
-		Id   int //`aql:"id,key=true"
+		Id   int
 		Name string
 	}
 
@@ -25,10 +25,11 @@ func Test_ExecContext(t *testing.T) {
 		params      []interface{}
 		expect      interface{}
 	}{
+
 		{
 			description: "register inlined set",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			sql:         "REGISTER SET Bar AS struct{id int; name string}",
+			sql:         "REGISTER SET Bar AS struct{id int; name string}", //TODO is this struct usable when all fields are private?
 		},
 		{
 			description: "register named set",
@@ -36,9 +37,32 @@ func Test_ExecContext(t *testing.T) {
 			sql:         "REGISTER SET Foo AS ?",
 			params:      []interface{}{Foo{}},
 		},
+		{
+			description: "register inlined global set",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			sql:         "REGISTER GLOBAL SET Bar AS struct{id int; name string}",
+		},
+		{
+			description: "register named global set",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			sql:         "REGISTER GLOBAL SET Foo AS ?",
+			params:      []interface{}{Foo{}},
+		},
+		{
+			description: "register named global set with ttl",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			sql:         "REGISTER GLOBAL SET WITH TTL 100 Foo AS ?",
+			params:      []interface{}{Foo{}},
+		},
+		{
+			description: "register inlined global set with ttl",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			sql:         "REGISTER GLOBAL SET WITH TTL 100 Bar AS struct{id int; name string}",
+		},
 	}
 
 	for _, tc := range testCase {
+		//for _, tc := range testCase[0:1] {
 		t.Run(tc.description, func(t *testing.T) {
 			db, err := sql.Open("aerospike", tc.dsn)
 			if !assert.Nil(t, err, tc.description) {
