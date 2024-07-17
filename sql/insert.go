@@ -47,12 +47,17 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 		return s.handleMapMerge(groups)
 	}
 
+	aSet := s.sets.Lookup(s.set)
+	if aSet == nil {
+		return fmt.Errorf("handlelistinsert: unable to lookup set with name %s", s.set)
+	}
+
 	for keyValue, group := range groups {
 		key, err := as.NewKey(s.namespace, s.set, keyValue)
 		if err != nil {
 			return err
 		}
-		writePolicy := as.NewWritePolicy(0, 0)
+		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 		writePolicy.SendKey = true
 		var ops []*as.Operation
 		var values = make(map[interface{}]interface{}, len(group))
@@ -121,8 +126,14 @@ func (s *Statement) mergeMaps(recKey interface{}, group map[interface{}]map[inte
 			}
 		}
 	}
-	_, _ = s.client.Operate(as.NewWritePolicy(0, 0), key, createOp...)
-	if _, err := s.client.Operate(as.NewWritePolicy(0, 0), key, op...); err != nil {
+
+	aSet := s.sets.Lookup(s.set)
+	if aSet == nil {
+		return fmt.Errorf("handlelistinsert: unable to lookup set with name %s", s.set)
+	}
+
+	_, _ = s.client.Operate(as.NewWritePolicy(0, aSet.ttlSec), key, createOp...)
+	if _, err := s.client.Operate(as.NewWritePolicy(0, aSet.ttlSec), key, op...); err != nil {
 		return err
 	}
 	return nil
@@ -166,6 +177,11 @@ func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) er
 	var argIndex int
 	var operations = map[interface{}][]*as.Operation{}
 
+	aSet := s.sets.Lookup(s.set)
+	if aSet == nil {
+		return fmt.Errorf("handlelistinsert: unable to lookup set with name %s", s.set)
+	}
+
 	for i := 0; i < itemCount; i++ {
 		bins, err := s.populateInsertBins(args, &argIndex)
 		if err != nil {
@@ -181,7 +197,7 @@ func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) er
 			return err
 		}
 		operations = append(operations, as.PutOp(as.NewBin(s.mapper.pk[0].Column(), keyValue)))
-		writePolicy := as.NewWritePolicy(0, 0)
+		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 		writePolicy.SendKey = true
 		ret, err := s.client.Operate(writePolicy, key, operations...)
 		if err != nil {
@@ -232,6 +248,11 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		return s.handleListInsert(args, batchCount)
 	}
 
+	aSet := s.sets.Lookup(s.set)
+	if aSet == nil {
+		return fmt.Errorf("handleinsert: unable to lookup set with name %s", s.set)
+	}
+
 	argIndex := 0
 	for b := 0; b < batchCount; b++ {
 		bins, err := s.populateInsertBins(args, &argIndex)
@@ -243,7 +264,7 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		if err != nil {
 			return err
 		}
-		writePolicy := as.NewWritePolicy(0, 0)
+		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 		writePolicy.SendKey = true
 
 		if s.mapBin != "" {

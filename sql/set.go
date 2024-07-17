@@ -3,6 +3,8 @@ package sql
 import "github.com/viant/x"
 
 type set struct {
-	xType  *x.Type
-	ttlSec int
+	xType           *x.Type
+	typeBasedMapper *mapper
+	queryMapper     *mapper
+	ttlSec          uint32
 }

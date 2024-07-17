@@ -124,7 +124,13 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 	if len(keys) != 1 {
 		return fmt.Errorf("update statement must have one pk")
 	}
-	writePolicy := as.NewWritePolicy(0, 0)
+
+	aSet := s.sets.Lookup(s.set)
+	if aSet == nil {
+		return fmt.Errorf("handlelistinsert: unable to lookup set with name %s", s.set)
+	}
+
+	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 	for _, key := range keys {
 		if _, err = s.client.Operate(writePolicy, key, operates...); err != nil {
 			return err

@@ -209,15 +209,27 @@ func (s *Statement) prepareDelete(sql string) error {
 }
 
 func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	err := s.setRecordType()
+	aSet := s.sets.Lookup(s.set)
+	if aSet == nil {
+		return nil, fmt.Errorf("executeselect: unable to lookup set with name %s", s.set)
+	}
+
+	err := s.setRecordType(aSet)
 	if err != nil {
 		return nil, err
 	}
 
-	aMapper, err := newQueryMapper(s.recordType, s.query.List) //TODO add s.mapper as parameter, don't create mapper again
-	if err != nil {
-		return nil, err
+	var aMapper *mapper
+	if aSet.queryMapper == nil {
+		aMapper, err = newQueryMapper(s.recordType, s.query.List, aSet.typeBasedMapper)
+		if err != nil {
+			return nil, err
+		}
+		aSet.queryMapper = aMapper
+	} else {
+		aMapper = aSet.queryMapper
 	}
+
 	row := reflect.New(s.recordType).Interface()
 	rows := &Rows{
 		zeroRecord: unsafe.Slice((*byte)(xunsafe.AsPointer(row)), s.recordType.Size()),
@@ -448,12 +460,7 @@ func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record
 	return nil
 }
 
-func (s *Statement) setRecordType() error {
-	aSet := s.sets.Lookup(s.set)
-	if aSet == nil {
-		return fmt.Errorf("setrecordtype: unable to lookup set with name %s", s.set)
-	}
-
+func (s *Statement) setRecordType(aSet *set) error {
 	if aSet.xType == nil {
 		return fmt.Errorf("setrecordtype: unable to lookup type with name %s", s.set)
 	}
@@ -631,27 +638,38 @@ func (s *Statement) buildKeys() ([]*as.Key, error) {
 	return result, nil
 }
 
-func (s *Statement) setMapper() error {
+func (s *Statement) setTypeBasedMapper() error {
 	var err error
 	if s.set == "" {
 		return nil
 	}
-	err = s.setRecordType()
+
+	aSet := s.sets.Lookup(s.set)
+	if aSet == nil {
+		return fmt.Errorf("executeselect: unable to lookup set with name %s", s.set)
+	}
+
+	err = s.setRecordType(aSet)
 	if err != nil {
 		return err
 	}
 
 	s.record = reflect.New(s.recordType).Interface()
-	if s.mapper, err = newTypeBaseMapper(s.recordType); err != nil {
-		return err
+	if aSet.typeBasedMapper == nil {
+		if s.mapper, err = newTypeBasedMapper(s.recordType); err != nil {
+			return err
+		}
+		aSet.typeBasedMapper = s.mapper
+	} else {
+		s.mapper = aSet.typeBasedMapper
 	}
+
 	if s.mapper.listKey {
 		s.listBin = s.mapBin
 		s.mapBin = ""
-
 	}
 
-	return err
+	return nil
 }
 
 func (s *Statement) handleDelete(args []driver.NamedValue) error {

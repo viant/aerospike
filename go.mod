@@ -8,8 +8,8 @@ require (
 	github.com/aerospike/aerospike-client-go/v6 v6.15.1
 	github.com/stretchr/testify v1.9.0
 	github.com/viant/assertly v0.9.0
-	github.com/viant/parsly v0.3.2-0.20231120160314-11ec855ce00a
-	github.com/viant/sqlparser v0.7.1-0.20240716201054-e9acebbe9320
+	github.com/viant/parsly v0.3.3-0.20240717150634-e1afaedb691b
+	github.com/viant/sqlparser v0.7.1-0.20240717151907-216ea35d127a
 	github.com/viant/structology v0.5.6-0.20240715114555-e89beafaa7b8
 	github.com/viant/tagly v0.2.0
 	github.com/viant/x v0.3.0

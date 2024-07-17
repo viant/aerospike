@@ -56,7 +56,7 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 		return nil, fmt.Errorf("unsupported kind: %v for SQL: %v", kind, SQL)
 	}
 
-	if err := stmt.setMapper(); err != nil {
+	if err := stmt.setTypeBasedMapper(); err != nil {
 		return nil, err
 	}
 

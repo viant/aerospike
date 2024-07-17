@@ -130,15 +130,19 @@ func (m *mapper) addField(aField reflect.StructField, tag *Tag) *field {
 	return mapperField
 }
 
-func newQueryMapper(recordType reflect.Type, list query.List) (*mapper, error) {
-	typeMapper, err := newTypeBaseMapper(recordType)
-	if err != nil {
-		return nil, err
+func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper) (*mapper, error) {
+	if typeMapper == nil {
+		return nil, fmt.Errorf("newquerymapper: typeMapper is nil")
 	}
 	if list.IsStarExpr() {
 		return typeMapper, nil
 	}
-	result := &mapper{fields: make([]field, 0), byName: make(map[string]int), listKey: typeMapper.listKey, mapKey: typeMapper.mapKey}
+	result := &mapper{
+		fields:  make([]field, 0),
+		byName:  make(map[string]int),
+		listKey: typeMapper.listKey,
+		mapKey:  typeMapper.mapKey,
+	}
 	for i := 0; i < len(list); i++ {
 		item := list[i]
 		switch actual := item.Expr.(type) {
@@ -166,7 +170,7 @@ func newQueryMapper(recordType reflect.Type, list query.List) (*mapper, error) {
 	return result, nil
 }
 
-func newTypeBaseMapper(recordType reflect.Type) (*mapper, error) {
+func newTypeBasedMapper(recordType reflect.Type) (*mapper, error) {
 	typeMapper := &mapper{fields: make([]field, 0), byName: make(map[string]int)}
 	var idIndex *int
 	for i := 0; i < recordType.NumField(); i++ {

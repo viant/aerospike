@@ -132,6 +132,11 @@ func Test_QueryContext(t *testing.T) {
 		Val    int `aerospike:"val" `
 	}
 
+	type Abc struct {
+		Id   int
+		Name string
+	}
+
 	var sets = []struct {
 		SQL    string
 		params []interface{}
@@ -145,6 +150,7 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET Qux AS ?", params: []interface{}{Qux{}}},
 		{SQL: "REGISTER SET BazPtr AS ?", params: []interface{}{BazPtr{}}},
 		{SQL: "REGISTER SET Msg AS ?", params: []interface{}{Message{}}},
+		{SQL: "REGISTER SET WITH TTL 2 Abc AS struct{Id int; Name string}"},
 	}
 
 	var testCases = []struct {
@@ -159,6 +165,7 @@ func Test_QueryContext(t *testing.T) {
 		expect      interface{}
 		skip        bool
 		scanner     func(r *sql.Rows) (interface{}, error)
+		sleepSec    int
 	}{
 
 		{
@@ -996,6 +1003,24 @@ func Test_QueryContext(t *testing.T) {
 				return &bazPtr, err
 			},
 		},
+		{
+			description: "insert record with ttl",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execParams:  []interface{}{1},
+			querySQL:    "SELECT * FROM Abc WHERE PK = ?",
+			init: []string{
+				"DELETE FROM Abc",
+				"INSERT INTO Abc(Id,Name) VALUES(1,'abc1')",
+			},
+			queryParams: []interface{}{1},
+			expect:      []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				abc := Abc{}
+				err := r.Scan(&abc.Id, &abc.Name)
+				return &abc, err
+			},
+			sleepSec: 3,
+		},
 	}
 
 	ctx := context.Background()
@@ -1031,6 +1056,10 @@ func Test_QueryContext(t *testing.T) {
 					fmt.Println("execSQL ERROR: ", err.Error())
 					return
 				}
+			}
+
+			if tc.sleepSec > 0 {
+				time.Sleep(time.Duration(tc.sleepSec) * time.Second)
 			}
 
 			rows, err := db.QueryContext(context.Background(), tc.querySQL, tc.queryParams...)
