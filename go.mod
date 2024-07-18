@@ -5,6 +5,7 @@ go 1.21.6
 toolchain go1.21.11
 
 require (
+	github.com/aerospike/aerospike-client-go v4.5.2+incompatible
 	github.com/aerospike/aerospike-client-go/v6 v6.15.1
 	github.com/stretchr/testify v1.9.0
 	github.com/viant/sqlparser v0.7.1-0.20240717151907-216ea35d127a
@@ -17,6 +18,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/viant/parsly v0.3.3-0.20240717150634-e1afaedb691b // indirect
 	github.com/viant/toolbox v0.34.6-0.20221112031702-3e7cdde7f888 // indirect

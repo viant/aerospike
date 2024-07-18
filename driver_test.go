@@ -10,6 +10,80 @@ import (
 	"time"
 )
 
+type (
+	testCase struct {
+		description   string
+		resetRegistry bool
+		dsn           string
+		execSQL       string
+		execParams    []interface{}
+		querySQL      string
+		init          []string
+		initParams    [][]interface{}
+		queryParams   []interface{}
+		expect        interface{}
+		sets          []*parameterizedQuery
+		skip          bool
+		scanner       func(r *sql.Rows) (interface{}, error)
+		sleepSec      int
+	}
+
+	testCases          []*testCase
+	parameterizedQuery struct {
+		SQL    string
+		params []interface{}
+	}
+)
+
+func Test_Meta(t *testing.T) {
+	namespace := "test"
+	type catalog struct {
+		CatalogName  string
+		SchemaName   string
+		SQLPath      string
+		CharacterSet string
+		Collation    string
+	}
+
+	var testCases = testCases{
+		{
+
+			description:   "list insert with index criteria",
+			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry: true,
+			sets: []*parameterizedQuery{
+				{
+					SQL: "REGISTER SET AAA01 AS struct{Id int; Name string}",
+				},
+				{
+					SQL: "REGISTER SET AAA02 AS struct{Id int; Name string}",
+				},
+			},
+
+			querySQL: `SELECT
+'' CATALOG_NAME,
+SCHEMA_NAME,
+'' SQL_PATH, 
+'utf8' DEFAULT_CHARACTER_SET_NAME,
+'' AS DEFAULT_COLLATION_NAME
+FROM information_schema.schemata`,
+			queryParams: []interface{}{},
+
+			expect: []interface{}{
+				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := catalog{}
+				err := r.Scan(&rec.CatalogName, &rec.SchemaName, &rec.SQLPath, &rec.CharacterSet, &rec.Collation)
+				return &rec, err
+			},
+		},
+	}
+
+	testCases.runTest(t)
+
+}
+
 func Test_ExecContext(t *testing.T) {
 	namespace := "test"
 
@@ -137,10 +211,7 @@ func Test_QueryContext(t *testing.T) {
 		Name string
 	}
 
-	var sets = []struct {
-		SQL    string
-		params []interface{}
-	}{
+	var sets = []*parameterizedQuery{
 		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}"},
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
 		{SQL: "REGISTER SET SimpleAgg AS ?", params: []interface{}{SimpleAgg{}}},
@@ -153,21 +224,31 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET WITH TTL 2 Abc AS struct{Id int; Name string}"},
 	}
 
-	var testCases = []struct {
-		description string
-		dsn         string
-		execSQL     string
-		execParams  []interface{}
-		querySQL    string
-		init        []string
-		initParams  [][]interface{}
-		queryParams []interface{}
-		expect      interface{}
-		skip        bool
-		scanner     func(r *sql.Rows) (interface{}, error)
-		sleepSec    int
-	}{
+	type CountRec struct {
+		Count int
+	}
 
+	var testCases = testCases{
+		{
+			description: "count",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "INSERT INTO Msg$Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?)",
+			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message", 1, "eee"},
+
+			querySQL:    "SELECT COUNT(*) FROM Msg$Items WHERE PK = ?",
+			queryParams: []interface{}{1},
+			init: []string{
+				"DELETE FROM Msg",
+			},
+			expect: []interface{}{
+				&CountRec{Count: 4},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := CountRec{}
+				err := r.Scan(&rec.Count)
+				return &rec, err
+			},
+		},
 		{
 			description: "list insert with index criteria",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -1023,10 +1104,18 @@ func Test_QueryContext(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
 	for _, tc := range testCases {
-		//for _, tc := range testCases[0:1] {
-		//for _, tc := range testCases[len(testCases)-1:] {
+		if len(tc.sets) == 0 {
+			tc.sets = sets
+		}
+	}
+	testCases.runTest(t)
+}
+
+func (s testCases) runTest(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range s {
+
 		fmt.Printf("running test: %v\n", tc.description)
 
 		t.Run(tc.description, func(t *testing.T) {
@@ -1035,11 +1124,14 @@ func Test_QueryContext(t *testing.T) {
 				t.Skip(tc.description)
 				return
 			}
+			if tc.resetRegistry {
+				globalSets.clear()
+			}
 			db, err := sql.Open("aerospike", tc.dsn)
 			if !assert.Nil(t, err, tc.description) {
 				return
 			}
-			for _, set := range sets {
+			for _, set := range tc.sets {
 				_, err = db.ExecContext(context.Background(), set.SQL, set.params...)
 				if !assert.Nil(t, err, tc.description) {
 					return

@@ -8,6 +8,7 @@ import (
 	"github.com/viant/structology"
 	"github.com/viant/xunsafe"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,16 +21,21 @@ type (
 		tag    *Tag
 		setter structology.Setter
 		*xunsafe.Field
-		index int
+		index    int
+		isPseudo bool
+		isFunc   bool
+		value    interface{}
 	}
 
 	mapper struct {
-		fields  []field
-		pk      []*field
-		key     []*field
-		listKey bool
-		mapKey  bool
-		byName  map[string]int
+		fields          []field
+		pk              []*field
+		key             []*field
+		listKey         bool
+		mapKey          bool
+		byName          map[string]int
+		pseudoColumns   map[string]interface{}
+		aggregateColumn map[string]*expr.Call
 	}
 )
 
@@ -137,37 +143,94 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 	if list.IsStarExpr() {
 		return typeMapper, nil
 	}
-	result := &mapper{
-		fields:  make([]field, 0),
-		byName:  make(map[string]int),
-		listKey: typeMapper.listKey,
-		mapKey:  typeMapper.mapKey,
+	ret := &mapper{
+		fields:          make([]field, 0),
+		byName:          make(map[string]int),
+		listKey:         typeMapper.listKey,
+		mapKey:          typeMapper.mapKey,
+		pseudoColumns:   make(map[string]interface{}),
+		aggregateColumn: make(map[string]*expr.Call),
 	}
 	for i := 0; i < len(list); i++ {
 		item := list[i]
 		switch actual := item.Expr.(type) {
+		case *expr.Literal:
+			switch actual.Kind {
+			case "string":
+				ret.pseudoColumns[item.Alias] = strings.Trim(actual.Value, "'")
+			case "int":
+
+				value, err := strconv.Atoi(actual.Value)
+				if err != nil {
+					return nil, fmt.Errorf("unable to convert %v to int", actual.Value)
+				}
+				ret.pseudoColumns[item.Alias] = value
+			case "numeric":
+				value, err := strconv.ParseFloat(actual.Value, 64)
+				if err != nil {
+					return nil, fmt.Errorf("unable to convert %v to float", actual.Value)
+				}
+				ret.pseudoColumns[item.Alias] = value
+			}
+			if err := ret.appendField(recordType, item.Alias, typeMapper, true, false); err != nil {
+				return nil, err
+			}
 		case *expr.Ident, *expr.Selector:
 			name := sqlparser.Stringify(actual)
-			if index := strings.LastIndex(name, "."); index != -1 {
-				name = name[index+1:]
+			if err := ret.appendField(recordType, name, typeMapper, false, false); err != nil {
+				return nil, err
 			}
-			pos, ok := typeMapper.byName[name]
-			fuzzName := strings.ReplaceAll(strings.ToLower(name), "_", "")
-			if !ok {
-				pos, ok = typeMapper.byName[fuzzName]
+		case *expr.Call:
+			funName := sqlparser.Stringify(actual.X)
+			switch strings.ToLower(funName) {
+			case "count":
+				if item.Alias == "" {
+					item.Alias = "t" + strconv.Itoa(i)
+				}
+				ret.aggregateColumn[item.Alias] = actual
 			}
-			if !ok {
-				return nil, fmt.Errorf("unable to match column: %v in type: %s", name, recordType.Name())
+			if err := ret.appendField(recordType, item.Alias, typeMapper, false, true); err != nil {
+				return nil, err
 			}
-			idx := len(result.fields)
-			result.fields = append(result.fields, typeMapper.fields[pos])
-			result.byName[name] = idx
-			result.byName[fuzzName] = idx
 		default:
 			return nil, fmt.Errorf("newmapper: unsupported expression type: %T", actual)
 		}
 	}
-	return result, nil
+	return ret, nil
+}
+
+func (m *mapper) appendField(recordType reflect.Type, name string, typeMapper *mapper, pseudo bool, fun bool) error {
+	if index := strings.LastIndex(name, "."); index != -1 {
+		name = name[index+1:]
+	}
+
+	pos, ok := typeMapper.byName[name]
+	fuzzName := strings.ReplaceAll(strings.ToLower(name), "_", "")
+	if pseudo {
+		m.fields = append(m.fields, field{Field: &xunsafe.Field{Name: name}, tag: &Tag{Name: name}, isPseudo: true})
+		idx := len(m.fields)
+		m.byName[name] = idx
+		m.byName[fuzzName] = idx
+		return nil
+	} else if fun {
+		m.fields = append(m.fields, field{Field: &xunsafe.Field{Name: name}, tag: &Tag{Name: name}, isFunc: fun})
+		idx := len(m.fields)
+		m.byName[name] = idx
+		m.byName[fuzzName] = idx
+		return nil
+	}
+
+	if !ok {
+		pos, ok = typeMapper.byName[fuzzName]
+	}
+	if !ok {
+		return fmt.Errorf("unable to match column: %v in type: %s", name, recordType.Name())
+	}
+	idx := len(m.fields)
+	m.fields = append(m.fields, typeMapper.fields[pos])
+	m.byName[name] = idx
+	m.byName[fuzzName] = idx
+	return nil
 }
 
 func newTypeBasedMapper(recordType reflect.Type) (*mapper, error) {

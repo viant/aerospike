@@ -23,7 +23,7 @@ type Rows struct {
 	processedRows uint64
 }
 
-// Columns returns query columns
+// Columns returns parameterizedQuery columns
 func (r *Rows) Columns() []string {
 	if r.mapper == nil {
 		return nil
@@ -62,6 +62,14 @@ func (r *Rows) Next(dest []driver.Value) error {
 
 func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr unsafe.Pointer) error {
 	for i, aField := range r.mapper.fields {
+		if aField.isPseudo {
+			dest[i] = r.mapper.pseudoColumns[aField.Name]
+			continue
+		}
+		if aField.isFunc {
+			dest[i] = record.Bins[aField.Column()]
+			continue
+		}
 		value, ok := record.Bins[aField.Column()]
 		if !ok {
 			continue

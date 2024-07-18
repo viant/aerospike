@@ -35,6 +35,7 @@ func (r *RowsReader) Read() (record *as.Record, err error) {
 		return nil, io.EOF
 	}
 	record = r.records[r.index]
+
 	r.index++
 	return record, nil
 }
