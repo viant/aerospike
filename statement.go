@@ -1,4 +1,4 @@
-package sql
+package aerospike
 
 import (
 	"context"
@@ -259,7 +259,6 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 
 			rows.rowsReader = &RowsScanReader{Recordset: recordset}
-
 		}
 	case 1:
 		var record *as.Record
