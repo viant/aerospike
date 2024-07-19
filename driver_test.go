@@ -30,9 +30,6 @@ type (
 		scanner            func(r *sql.Rows) (interface{}, error)
 		sleepSec           int
 		justNActualRows    int
-
-		//sortActualFn
-		//actualFirst
 	}
 
 	testCases          []*testCase
@@ -63,36 +60,54 @@ func Test_Meta(t *testing.T) {
 		TableRows     string
 		Version       string
 		Engine        string
+		Rows          int
+	}
+
+	type tableColumn struct {
+		TableCatalog           string
+		TableSchema            string
+		TableName              string
+		ColumnName             string
+		OrdinalPosition        int
+		ColumnComment          string
+		DataType               string
+		CharacterMaximumLength int
+		NumericPrecision       int
+		NumericScale           int
+		IsNullable             string
+		ColumnDefault          string
+		ColumnKey              string
+		IsAutoIncrement        int
 	}
 
 	var testCases = testCases{
-		//		{
-		//			description:   "list insert with index criteria",
-		//			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
-		//			resetRegistry: true,
-		//			sets: []*parameterizedQuery{
-		//				{SQL: "REGISTER SET AAA01 AS struct{Id int; Name string}"},
-		//				{SQL: "REGISTER SET AAA02 AS struct{Id int; Name string}"},
-		//			},
-		//			querySQL: `SELECT
-		//'' CATALOG_NAME,
-		//SCHEMA_NAME,
-		//'' SQL_PATH,
-		//'utf8' DEFAULT_CHARACTER_SET_NAME,
-		//'' AS DEFAULT_COLLATION_NAME
-		//FROM information_schema.schemata`,
-		//			queryParams: []interface{}{},
-		//			expect: []interface{}{
-		//				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
-		//			},
-		//			scanner: func(r *sql.Rows) (interface{}, error) {
-		//				rec := catalog{}
-		//				err := r.Scan(&rec.CatalogName, &rec.SchemaName, &rec.SQLPath, &rec.CharacterSet, &rec.Collation)
-		//				return &rec, err
-		//			},
-		//		},
 		{
-			description:        "list insert with index criteria",
+			description:   "metadata: all schemas - all namespaces in db",
+			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry: true,
+			sets: []*parameterizedQuery{
+				{SQL: "REGISTER SET AAA01 AS struct{Id int; Name string}"},
+				{SQL: "REGISTER SET AAA02 AS struct{Id int; Name string}"},
+			},
+			querySQL: `select
+		   '' catalog_name,
+		   schema_name,
+		   '' sql_path,
+		   'utf8' default_character_set_name,
+		   '' as default_collation_name
+		   from information_schema.schemata`,
+			queryParams: []interface{}{},
+			expect: []interface{}{
+				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := catalog{}
+				err := r.Scan(&rec.CatalogName, &rec.SchemaName, &rec.SQLPath, &rec.CharacterSet, &rec.Collation)
+				return &rec, err
+			},
+		},
+		{
+			description:        "metadata: all tables - all registered sets for current connection",
 			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
 			resetRegistry:      true,
 			truncateNamespaces: true,
@@ -101,23 +116,19 @@ func Test_Meta(t *testing.T) {
 				{SQL: "REGISTER SET A02 AS struct{Id int; Name string}"},
 				{SQL: "REGISTER SET A03 AS struct{Id int; Name string}"},
 			},
-			init: []string{
-				"INSERT INTO A01(id,name) VALUES(1, 'name01')",
-				"INSERT INTO A02(id,name) VALUES(2, 'name02')",
-			},
-			querySQL: `SELECT
-'' TABLE_CATALOG,
-TABLE_SCHEMA,
-TABLE_NAME,
-'' TABLE_TYPE,
-'' AS AUTO_INCREMENT,
-'' CREATE_TIME,
-'' UPDATE_TIME,
-'' TABLE_ROWS,
-'' VERSION,
-'' ENGINE,
-0 ROWS,
-FROM INFORMATION_SCHEMA.TABLES`,
+			querySQL: `select
+'' table_catalog,
+table_schema,
+table_name,
+'' table_type,
+'' as auto_increment,
+'' create_time,
+'' update_time,
+'' table_rows,
+'' version,
+'' engine,
+0 rows
+from information_schema.tables`,
 			queryParams:     []interface{}{},
 			justNActualRows: 2,
 			expect: []interface{}{
@@ -126,7 +137,177 @@ FROM INFORMATION_SCHEMA.TABLES`,
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := table{}
-				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.TableType, &rec.AutoIncrement, &rec.CreateTime, &rec.UpdateTime, &rec.TableRows, &rec.Version, &rec.Engine)
+				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.TableType, &rec.AutoIncrement, &rec.CreateTime, &rec.UpdateTime, &rec.TableRows, &rec.Version, &rec.Engine, &rec.Rows)
+				return &rec, err
+			},
+		},
+		{
+			description:        "metadata: 2 tables - 2 registered sets for current connection",
+			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry:      true,
+			truncateNamespaces: true,
+			sets: []*parameterizedQuery{
+				{SQL: "REGISTER SET A01 AS struct{Id int; Name string}"},
+				{SQL: "REGISTER SET A02 AS struct{Id int; Name string}"},
+				{SQL: "REGISTER SET A03 AS struct{Id int; Name string}"},
+			},
+			querySQL: `select
+'' table_catalog,
+table_schema,
+table_name,
+'' table_type,
+'' as auto_increment,
+'' create_time,
+'' update_time,
+'' table_rows,
+'' version,
+'' engine,
+0 rows
+from information_schema.tables
+where pk in ('A02','A03')`,
+			queryParams: []interface{}{},
+			expect: []interface{}{
+				&table{TableCatalog: "", TableSchema: "test", TableName: "A02", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: "", Version: "", Engine: ""},
+				&table{TableCatalog: "", TableSchema: "test", TableName: "A03", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: "", Version: "", Engine: ""},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := table{}
+				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.TableType, &rec.AutoIncrement, &rec.CreateTime, &rec.UpdateTime, &rec.TableRows, &rec.Version, &rec.Engine, &rec.Rows)
+				return &rec, err
+			},
+		},
+		{
+			description:        "metadata: all table columns - all registered set fields for current connection",
+			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry:      true,
+			truncateNamespaces: true,
+			sets: []*parameterizedQuery{
+				{SQL: "REGISTER SET A01 AS struct{Id int; Name string}"},
+				{SQL: "REGISTER SET A02 AS struct{Id int; Name string}"},
+			},
+			querySQL: `select
+		   '' table_catalog,
+		   table_schema,
+		   table_name,
+		   column_name,
+		   ordinal_position,
+		   column_comment,
+		   data_type,
+		   character_maximum_length,
+		   numeric_precision,
+		   numeric_scale,
+		   is_nullable,
+		   column_default,
+		   column_key,
+		   is_autoincrement
+		   from information_schema.columns`,
+			queryParams:     []interface{}{},
+			justNActualRows: 2, // !!!
+			expect: []interface{}{
+				&tableColumn{
+					TableCatalog:           "",
+					TableSchema:            "test",
+					TableName:              "A01",
+					ColumnName:             "Id",
+					OrdinalPosition:        0,
+					ColumnComment:          "",
+					DataType:               "int",
+					CharacterMaximumLength: 0,
+					NumericPrecision:       0,
+					NumericScale:           0,
+					IsNullable:             "false",
+					ColumnDefault:          "",
+					ColumnKey:              "",
+					IsAutoIncrement:        0,
+				},
+				&tableColumn{
+					TableCatalog:           "",
+					TableSchema:            "test",
+					TableName:              "A01",
+					ColumnName:             "Name",
+					OrdinalPosition:        1,
+					ColumnComment:          "",
+					DataType:               "string",
+					CharacterMaximumLength: 0,
+					NumericPrecision:       0,
+					NumericScale:           0,
+					IsNullable:             "false",
+					ColumnDefault:          "",
+					ColumnKey:              "",
+					IsAutoIncrement:        0,
+				},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := tableColumn{}
+				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.ColumnName, &rec.OrdinalPosition, &rec.ColumnComment, &rec.DataType, &rec.CharacterMaximumLength, &rec.NumericPrecision, &rec.NumericScale, &rec.IsNullable, &rec.ColumnDefault, &rec.ColumnKey, &rec.IsAutoIncrement)
+				return &rec, err
+			},
+		},
+		{
+			description:        "metadata: table columns for 2 tables - fields for 2 sets for current connection",
+			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry:      true,
+			truncateNamespaces: true,
+			sets: []*parameterizedQuery{
+				{SQL: "REGISTER SET A01 AS struct{Id int; Name string}"},
+				{SQL: "REGISTER SET A02 AS struct{Id int; Name string}"},
+			},
+			querySQL: `select
+		   '' table_catalog,
+		   table_schema,
+		   table_name,
+		   column_name,
+		   ordinal_position,
+		   column_comment,
+		   data_type,
+		   character_maximum_length,
+		   numeric_precision,
+		   numeric_scale,
+		   is_nullable,
+		   column_default,
+		   column_key,
+		   is_autoincrement
+		   from information_schema.columns
+		   where pk = 'A02'`,
+			queryParams:     []interface{}{},
+			justNActualRows: 2, //TODO
+			expect: []interface{}{
+				&tableColumn{
+					TableCatalog:           "",
+					TableSchema:            "test",
+					TableName:              "A02",
+					ColumnName:             "Id",
+					OrdinalPosition:        0,
+					ColumnComment:          "",
+					DataType:               "int",
+					CharacterMaximumLength: 0,
+					NumericPrecision:       0,
+					NumericScale:           0,
+					IsNullable:             "false",
+					ColumnDefault:          "",
+					ColumnKey:              "",
+					IsAutoIncrement:        0,
+				},
+				&tableColumn{
+					TableCatalog:           "",
+					TableSchema:            "test",
+					TableName:              "A02",
+					ColumnName:             "Name",
+					OrdinalPosition:        1,
+					ColumnComment:          "",
+					DataType:               "string",
+					CharacterMaximumLength: 0,
+					NumericPrecision:       0,
+					NumericScale:           0,
+					IsNullable:             "false",
+					ColumnDefault:          "",
+					ColumnKey:              "",
+					IsAutoIncrement:        0,
+				},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := tableColumn{}
+				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.ColumnName, &rec.OrdinalPosition, &rec.ColumnComment, &rec.DataType, &rec.CharacterMaximumLength, &rec.NumericPrecision, &rec.NumericScale, &rec.IsNullable, &rec.ColumnDefault, &rec.ColumnKey, &rec.IsAutoIncrement)
 				return &rec, err
 			},
 		},

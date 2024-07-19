@@ -32,14 +32,14 @@ func (s *Statement) registerMetaSets() error {
 				xType:  x.NewType(reflect.TypeOf(catalog{}), x.WithName("schemata")),
 				ttlSec: 0,
 			})
-		case "tables", "TABLES":
+		case "tables":
 			s.sets.register(&set{
 				xType:  x.NewType(reflect.TypeOf(table{}), x.WithName("tables")),
 				ttlSec: 0,
 			})
-
+		case "columns":
 			s.sets.register(&set{
-				xType:  x.NewType(reflect.TypeOf(table{}), x.WithName("TABLES")),
+				xType:  x.NewType(reflect.TypeOf(tableColumn{}), x.WithName("columns")),
 				ttlSec: 0,
 			})
 		default:

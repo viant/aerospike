@@ -15,7 +15,7 @@ type catalog struct {
 
 type table struct {
 	TableSchema string `sqlx:"table_schema" aerospike:"table_schema"`
-	TableName   string `sqlx:"table_name" aerospike:"table_name"`
+	TableName   string `sqlx:"table_name" aerospike:"table_name,pk=true"`
 }
 
 type tableColumn struct {
@@ -128,7 +128,7 @@ func (s *Statement) handleTableInfo(ctx context.Context, keys []*as.Key, rows *R
 					"is_nullable":              aField.Type.Kind() == reflect.Ptr,
 					"column_default":           "",
 					"column_key":               "",
-					"is_autoincrement":         "",
+					"is_autoincrement":         0,
 				},
 			}
 			recs = append(recs, rec)
@@ -144,15 +144,21 @@ func (s *Statement) handleTableSet(ctx context.Context, keys []*as.Key, rows *Ro
 		indexedKeys[key.Value().GetObject().(string)] = true
 	}
 
+	var qualified []*set
 	recs := make([]*as.Record, 0)
 	for _, item := range s.sets.sets() {
 		if len(indexedKeys) > 0 && !indexedKeys[item] {
 			continue
 		}
+		aSet := s.sets.Lookup(item)
+		qualified = append(qualified, aSet)
+	}
+
+	for _, aSet := range qualified {
 		rec := &as.Record{
 			Bins: as.BinMap{
-				"table_schema": s.namespace,
-				"table_name":   item,
+				"table_schema": s.cfg.namespace,
+				"table_name":   aSet.xType.Name,
 			},
 		}
 		recs = append(recs, rec)
