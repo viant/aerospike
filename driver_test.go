@@ -53,14 +53,15 @@ func Test_Meta(t *testing.T) {
 		TableCatalog  string
 		TableSchema   string
 		TableName     string
+		TableComment  string
 		TableType     string
 		AutoIncrement string
 		CreateTime    string
 		UpdateTime    string
-		TableRows     string
+		TableRows     int
 		Version       string
 		Engine        string
-		Rows          int
+		DDL           string
 	}
 
 	type tableColumn struct {
@@ -85,10 +86,6 @@ func Test_Meta(t *testing.T) {
 			description:   "metadata: all schemas - all namespaces in db",
 			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
 			resetRegistry: true,
-			sets: []*parameterizedQuery{
-				{SQL: "REGISTER SET AAA01 AS struct{Id int; Name string}"},
-				{SQL: "REGISTER SET AAA02 AS struct{Id int; Name string}"},
-			},
 			querySQL: `select
 		   '' catalog_name,
 		   schema_name,
@@ -96,6 +93,28 @@ func Test_Meta(t *testing.T) {
 		   'utf8' default_character_set_name,
 		   '' as default_collation_name
 		   from information_schema.schemata`,
+			queryParams: []interface{}{},
+			expect: []interface{}{
+				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := catalog{}
+				err := r.Scan(&rec.CatalogName, &rec.SchemaName, &rec.SQLPath, &rec.CharacterSet, &rec.Collation)
+				return &rec, err
+			},
+		},
+		{
+			description:   "metadata: 1 schema - 1 namespaces from db",
+			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry: true,
+			querySQL: `select
+'' catalog_name,
+schema_name,
+'' sql_path,
+'utf8' default_character_set_name,
+'' as default_collation_name
+from information_schema.schemata
+where pk = 'test'`,
 			queryParams: []interface{}{},
 			expect: []interface{}{
 				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
@@ -120,24 +139,25 @@ func Test_Meta(t *testing.T) {
 '' table_catalog,
 table_schema,
 table_name,
+'' table_comment,
 '' table_type,
 '' as auto_increment,
 '' create_time,
 '' update_time,
-'' table_rows,
+0 table_rows,
 '' version,
 '' engine,
-0 rows
+'' ddl
 from information_schema.tables`,
 			queryParams:     []interface{}{},
 			justNActualRows: 2,
 			expect: []interface{}{
-				&table{TableCatalog: "", TableSchema: "test", TableName: "A01", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: "", Version: "", Engine: ""},
-				&table{TableCatalog: "", TableSchema: "test", TableName: "A02", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: "", Version: "", Engine: ""},
+				&table{TableCatalog: "", TableSchema: "test", TableName: "A01", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
+				&table{TableCatalog: "", TableSchema: "test", TableName: "A02", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := table{}
-				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.TableType, &rec.AutoIncrement, &rec.CreateTime, &rec.UpdateTime, &rec.TableRows, &rec.Version, &rec.Engine, &rec.Rows)
+				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.TableComment, &rec.TableType, &rec.AutoIncrement, &rec.CreateTime, &rec.UpdateTime, &rec.TableRows, &rec.Version, &rec.Engine, &rec.DDL)
 				return &rec, err
 			},
 		},
@@ -155,24 +175,25 @@ from information_schema.tables`,
 '' table_catalog,
 table_schema,
 table_name,
+'' table_comment,
 '' table_type,
 '' as auto_increment,
 '' create_time,
 '' update_time,
-'' table_rows,
+0 table_rows,
 '' version,
 '' engine,
-0 rows
+'' ddl
 from information_schema.tables
 where pk in ('A02','A03')`,
 			queryParams: []interface{}{},
 			expect: []interface{}{
-				&table{TableCatalog: "", TableSchema: "test", TableName: "A02", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: "", Version: "", Engine: ""},
-				&table{TableCatalog: "", TableSchema: "test", TableName: "A03", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: "", Version: "", Engine: ""},
+				&table{TableCatalog: "", TableSchema: "test", TableName: "A02", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
+				&table{TableCatalog: "", TableSchema: "test", TableName: "A03", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := table{}
-				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.TableType, &rec.AutoIncrement, &rec.CreateTime, &rec.UpdateTime, &rec.TableRows, &rec.Version, &rec.Engine, &rec.Rows)
+				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.TableComment, &rec.TableType, &rec.AutoIncrement, &rec.CreateTime, &rec.UpdateTime, &rec.TableRows, &rec.Version, &rec.Engine, &rec.DDL)
 				return &rec, err
 			},
 		},

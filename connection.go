@@ -53,7 +53,7 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 		}
 	case sqlparser.KindRegisterSet:
 	default:
-		return nil, fmt.Errorf("unsupported kind: %v for SQL: %v", kind, SQL)
+		return nil, fmt.Errorf("unsupported kind: %v for DDL: %v", kind, SQL)
 	}
 
 	if err := stmt.setTypeBasedMapper(); err != nil {
