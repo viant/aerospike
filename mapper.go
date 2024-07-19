@@ -155,9 +155,11 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 		item := list[i]
 		switch actual := item.Expr.(type) {
 		case *expr.Literal:
+			var rType reflect.Type
 			switch actual.Kind {
 			case "string":
 				ret.pseudoColumns[item.Alias] = strings.Trim(actual.Value, "'")
+				rType = reflect.TypeOf((*string)(nil)).Elem()
 			case "int":
 
 				value, err := strconv.Atoi(actual.Value)
@@ -165,19 +167,21 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 					return nil, fmt.Errorf("unable to convert %v to int", actual.Value)
 				}
 				ret.pseudoColumns[item.Alias] = value
+				rType = reflect.TypeOf((*string)(nil)).Elem()
 			case "numeric":
 				value, err := strconv.ParseFloat(actual.Value, 64)
 				if err != nil {
 					return nil, fmt.Errorf("unable to convert %v to float", actual.Value)
 				}
 				ret.pseudoColumns[item.Alias] = value
+				rType = reflect.TypeOf((*float64)(nil)).Elem()
 			}
-			if err := ret.appendField(recordType, item.Alias, typeMapper, true, false); err != nil {
+			if err := ret.appendField(recordType, item.Alias, typeMapper, true, false, rType); err != nil {
 				return nil, err
 			}
 		case *expr.Ident, *expr.Selector:
 			name := sqlparser.Stringify(actual)
-			if err := ret.appendField(recordType, name, typeMapper, false, false); err != nil {
+			if err := ret.appendField(recordType, name, typeMapper, false, false, nil); err != nil {
 				return nil, err
 			}
 		case *expr.Call:
@@ -189,7 +193,7 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 				}
 				ret.aggregateColumn[item.Alias] = actual
 			}
-			if err := ret.appendField(recordType, item.Alias, typeMapper, false, true); err != nil {
+			if err := ret.appendField(recordType, item.Alias, typeMapper, false, true, nil); err != nil {
 				return nil, err
 			}
 		default:
@@ -199,7 +203,7 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 	return ret, nil
 }
 
-func (m *mapper) appendField(recordType reflect.Type, name string, typeMapper *mapper, pseudo bool, fun bool) error {
+func (m *mapper) appendField(recordType reflect.Type, name string, typeMapper *mapper, pseudo bool, fun bool, rType reflect.Type) error {
 	if index := strings.LastIndex(name, "."); index != -1 {
 		name = name[index+1:]
 	}
@@ -207,13 +211,29 @@ func (m *mapper) appendField(recordType reflect.Type, name string, typeMapper *m
 	pos, ok := typeMapper.byName[name]
 	fuzzName := strings.ReplaceAll(strings.ToLower(name), "_", "")
 	if pseudo {
-		m.fields = append(m.fields, field{Field: &xunsafe.Field{Name: name}, tag: &Tag{Name: name}, isPseudo: true})
+		m.fields = append(m.fields,
+			field{
+				Field: &xunsafe.Field{
+					Name: name,
+					Type: rType,
+				},
+				tag:      &Tag{Name: name},
+				isPseudo: true,
+			})
 		idx := len(m.fields)
 		m.byName[name] = idx
 		m.byName[fuzzName] = idx
 		return nil
 	} else if fun {
-		m.fields = append(m.fields, field{Field: &xunsafe.Field{Name: name}, tag: &Tag{Name: name}, isFunc: fun})
+		m.fields = append(m.fields,
+			field{
+				Field: &xunsafe.Field{
+					Name: name,
+					Type: rType,
+				},
+				tag:    &Tag{Name: name},
+				isFunc: fun,
+			})
 		idx := len(m.fields)
 		m.byName[name] = idx
 		m.byName[fuzzName] = idx
