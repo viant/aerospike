@@ -32,6 +32,16 @@ func (s *Statement) registerMetaSets() error {
 				xType:  x.NewType(reflect.TypeOf(catalog{}), x.WithName("schemata")),
 				ttlSec: 0,
 			})
+		case "tables", "TABLES":
+			s.sets.register(&set{
+				xType:  x.NewType(reflect.TypeOf(table{}), x.WithName("tables")),
+				ttlSec: 0,
+			})
+
+			s.sets.register(&set{
+				xType:  x.NewType(reflect.TypeOf(table{}), x.WithName("TABLES")),
+				ttlSec: 0,
+			})
 		default:
 			return fmt.Errorf("unsupported InformationSchema: %v", s.set)
 		}

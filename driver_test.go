@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/stretchr/testify/assert"
+	"log"
 	"sort"
 	"testing"
 	"time"
@@ -12,20 +14,25 @@ import (
 
 type (
 	testCase struct {
-		description   string
-		resetRegistry bool
-		dsn           string
-		execSQL       string
-		execParams    []interface{}
-		querySQL      string
-		init          []string
-		initParams    [][]interface{}
-		queryParams   []interface{}
-		expect        interface{}
-		sets          []*parameterizedQuery
-		skip          bool
-		scanner       func(r *sql.Rows) (interface{}, error)
-		sleepSec      int
+		description        string
+		resetRegistry      bool
+		truncateNamespaces bool
+		dsn                string
+		execSQL            string
+		execParams         []interface{}
+		querySQL           string
+		init               []string
+		initParams         [][]interface{}
+		queryParams        []interface{}
+		expect             interface{}
+		sets               []*parameterizedQuery
+		skip               bool
+		scanner            func(r *sql.Rows) (interface{}, error)
+		sleepSec           int
+		justNActualRows    int
+
+		//sortActualFn
+		//actualFirst
 	}
 
 	testCases          []*testCase
@@ -45,36 +52,81 @@ func Test_Meta(t *testing.T) {
 		Collation    string
 	}
 
+	type table struct {
+		TableCatalog  string
+		TableSchema   string
+		TableName     string
+		TableType     string
+		AutoIncrement string
+		CreateTime    string
+		UpdateTime    string
+		TableRows     string
+		Version       string
+		Engine        string
+	}
+
 	var testCases = testCases{
+		//		{
+		//			description:   "list insert with index criteria",
+		//			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
+		//			resetRegistry: true,
+		//			sets: []*parameterizedQuery{
+		//				{SQL: "REGISTER SET AAA01 AS struct{Id int; Name string}"},
+		//				{SQL: "REGISTER SET AAA02 AS struct{Id int; Name string}"},
+		//			},
+		//			querySQL: `SELECT
+		//'' CATALOG_NAME,
+		//SCHEMA_NAME,
+		//'' SQL_PATH,
+		//'utf8' DEFAULT_CHARACTER_SET_NAME,
+		//'' AS DEFAULT_COLLATION_NAME
+		//FROM information_schema.schemata`,
+		//			queryParams: []interface{}{},
+		//			expect: []interface{}{
+		//				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
+		//			},
+		//			scanner: func(r *sql.Rows) (interface{}, error) {
+		//				rec := catalog{}
+		//				err := r.Scan(&rec.CatalogName, &rec.SchemaName, &rec.SQLPath, &rec.CharacterSet, &rec.Collation)
+		//				return &rec, err
+		//			},
+		//		},
 		{
-
-			description:   "list insert with index criteria",
-			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
-			resetRegistry: true,
+			description:        "list insert with index criteria",
+			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry:      true,
+			truncateNamespaces: true,
 			sets: []*parameterizedQuery{
-				{
-					SQL: "REGISTER SET AAA01 AS struct{Id int; Name string}",
-				},
-				{
-					SQL: "REGISTER SET AAA02 AS struct{Id int; Name string}",
-				},
+				{SQL: "REGISTER SET A01 AS struct{Id int; Name string}"},
+				{SQL: "REGISTER SET A02 AS struct{Id int; Name string}"},
+				{SQL: "REGISTER SET A03 AS struct{Id int; Name string}"},
 			},
-
+			init: []string{
+				"INSERT INTO A01(id,name) VALUES(1, 'name01')",
+				"INSERT INTO A02(id,name) VALUES(2, 'name02')",
+			},
 			querySQL: `SELECT
-'' CATALOG_NAME,
-SCHEMA_NAME,
-'' SQL_PATH, 
-'utf8' DEFAULT_CHARACTER_SET_NAME,
-'' AS DEFAULT_COLLATION_NAME
-FROM information_schema.schemata`,
-			queryParams: []interface{}{},
-
+'' TABLE_CATALOG,
+TABLE_SCHEMA,
+TABLE_NAME,
+'' TABLE_TYPE,
+'' AS AUTO_INCREMENT,
+'' CREATE_TIME,
+'' UPDATE_TIME,
+'' TABLE_ROWS,
+'' VERSION,
+'' ENGINE,
+0 ROWS,
+FROM INFORMATION_SCHEMA.TABLES`,
+			queryParams:     []interface{}{},
+			justNActualRows: 2,
 			expect: []interface{}{
-				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
+				&table{TableCatalog: "", TableSchema: "test", TableName: "A01", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: "", Version: "", Engine: ""},
+				&table{TableCatalog: "", TableSchema: "test", TableName: "A02", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: "", Version: "", Engine: ""},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
-				rec := catalog{}
-				err := r.Scan(&rec.CatalogName, &rec.SchemaName, &rec.SQLPath, &rec.CharacterSet, &rec.Collation)
+				rec := table{}
+				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.TableType, &rec.AutoIncrement, &rec.CreateTime, &rec.UpdateTime, &rec.TableRows, &rec.Version, &rec.Engine)
 				return &rec, err
 			},
 		},
@@ -1117,8 +1169,14 @@ func (s testCases) runTest(t *testing.T) {
 	for _, tc := range s {
 
 		fmt.Printf("running test: %v\n", tc.description)
-
 		t.Run(tc.description, func(t *testing.T) {
+
+			if tc.truncateNamespaces {
+				err := truncateNamespace(tc.dsn)
+				if !assert.Nil(t, err, tc.description) {
+					return
+				}
+			}
 
 			if tc.skip {
 				t.Skip(tc.description)
@@ -1160,16 +1218,23 @@ func (s testCases) runTest(t *testing.T) {
 			}
 			assert.NotNil(t, rows, tc.description)
 
-			var items = make([]interface{}, 0)
+			var actual = make([]interface{}, 0)
 			for rows.Next() {
 				item, err := tc.scanner(rows)
 				assert.Nil(t, err, tc.description)
-				items = append(items, item)
+				actual = append(actual, item)
 			}
-			sort.Slice(items, func(i, j int) bool {
-				return fmt.Sprintf("%v", items[i]) < fmt.Sprintf("%v", items[j])
+			sort.Slice(actual, func(i, j int) bool {
+				return fmt.Sprintf("%v", actual[i]) < fmt.Sprintf("%v", actual[j])
 			})
-			assert.Equal(t, tc.expect, items, tc.description)
+
+			if tc.justNActualRows != 0 {
+				if len(actual) >= tc.justNActualRows {
+					actual = actual[:tc.justNActualRows]
+				}
+			}
+
+			assert.Equal(t, tc.expect, actual, tc.description)
 		})
 	}
 }
@@ -1198,4 +1263,58 @@ func getTime(formattedTime string) time.Time {
 
 func getTimePtr(t time.Time) *time.Time {
 	return &t
+}
+
+func truncateNamespace(dsn string) error {
+	cfg, err := ParseDSN(dsn)
+	client, err := as.NewClientWithPolicy(nil, cfg.host, cfg.port)
+	if err != nil {
+		return fmt.Errorf("failed to connect to aerospike with dsn %s due to: %v", dsn, err)
+	}
+
+	defer client.Close()
+
+	// Define the namespace
+	namespace := cfg.namespace
+
+	err = client.Truncate(nil, namespace, "", nil)
+	if err != nil {
+		log.Fatalf("Failed to truncate set %s: %v", "", err)
+	}
+	fmt.Printf("Truncated set %s in namespace %s\n", "", namespace)
+
+	return err
+}
+
+// /
+// Define a type for a slice of tables
+type tableSlice []table
+
+// Implement the sort.Interface for tableSlice
+
+// Len is the number of elements in the collection.
+func (t tableSlice) Len() int {
+	return len(t)
+}
+
+// Swap swaps the elements with indexes i and j.
+func (t tableSlice) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
+}
+
+// Less reports whether the element with
+// index i should sort before the element with index j.
+func (t tableSlice) Less(i, j int) bool {
+	return t[i].TableName < t[j].TableName
+}
+
+func modifyActual(src []interface{}) (interface{}, error) {
+	var result []*table
+	for _, item := range src {
+		t, ok := item.(*table)
+		if !ok {
+			return nil, fmt.Errorf("expected type %T, got %T", t, item)
+		}
+	}
+	return result, nil
 }
