@@ -60,9 +60,9 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 	case sqlparser.KindRegisterSet:
 		return s.handleRegisterSet(args)
 	case sqlparser.KindInsert:
-		return nil, s.handleInsert(args)
+		s.handleInsert(args)
 	case sqlparser.KindUpdate:
-		return nil, s.handleUpdate(args)
+		s.handleUpdate(args)
 	case sqlparser.KindDelete:
 		return nil, s.handleDelete(args)
 	case sqlparser.KindSelect:
@@ -74,7 +74,7 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 		ret.lastInsertedID = *s.lastInsertID
 		ret.hasLastInsertedID = true
 	}
-	return nil, nil //TODO error - unsupported kind?
+	return ret, nil
 }
 
 // Query runs parameterizedQuery
