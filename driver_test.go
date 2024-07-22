@@ -357,7 +357,7 @@ region,
 catalog_name,
 schema_name,
 app_name
-from information_schema.processList`,
+from information_schema.processlist`,
 			queryParams: []interface{}{},
 			expect: []interface{}{
 				&processlist{

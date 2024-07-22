@@ -44,7 +44,7 @@ func (s *Statement) registerMetaSets() error {
 			})
 		case "processlist":
 			s.sets.register(&set{
-				xType:  x.NewType(reflect.TypeOf(processList{}), x.WithName("processList")),
+				xType:  x.NewType(reflect.TypeOf(processList{}), x.WithName("processlist")),
 				ttlSec: 0,
 			})
 		default:
