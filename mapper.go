@@ -196,6 +196,7 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 		byName:          make(map[string]int),
 		listKey:         typeMapper.listKey,
 		mapKey:          typeMapper.mapKey,
+		pk:              typeMapper.pk,
 		pseudoColumns:   make(map[string]interface{}),
 		aggregateColumn: make(map[string]*expr.Call),
 	}
