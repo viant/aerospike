@@ -131,7 +131,6 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 	}
 
 	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
-	writePolicy.GenerationPolicy = as.EXPECT_GEN_GT
 	for _, key := range keys {
 		if _, err = s.client.Operate(writePolicy, key, operates...); err != nil {
 			return err
