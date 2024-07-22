@@ -11,7 +11,7 @@ import (
 type connection struct {
 	cfg    *Config
 	client *as.Client
-	sets   *Registry
+	sets   *registry
 }
 
 // Prepare returns a prepared statement, bound to this connection.

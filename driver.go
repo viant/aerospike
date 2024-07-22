@@ -45,6 +45,6 @@ func (d Driver) Open(dsn string) (driver.Conn, error) {
 	return &connection{
 		cfg:    cfg,
 		client: client,
-		sets:   NewRegistry(),
+		sets:   newRegistry(),
 	}, nil
 }

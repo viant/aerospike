@@ -6,29 +6,29 @@ import (
 )
 
 type (
-	//Registry represents a set registry
-	Registry struct {
+	//registry represents a set registry
+	registry struct {
 		mux   sync.RWMutex
 		types map[string]*set
 	}
 )
 
 // Register registers a set
-func (r *Registry) Register(aSet *set) error {
+func (r *registry) Register(aSet *set) error {
 	if aSet == nil {
 		return fmt.Errorf("unable to register set: set is nil")
 	}
 	r.register(aSet)
 	return nil
 }
-func (r *Registry) clear() {
+func (r *registry) clear() {
 	r.mux.Lock()
 	r.types = make(map[string]*set)
 	r.mux.Unlock()
 
 }
 
-func (r *Registry) sets() []string {
+func (r *registry) sets() []string {
 	r.mux.RLock()
 	keys := make([]string, 0, len(r.types))
 	for key := range r.types {
@@ -38,7 +38,7 @@ func (r *Registry) sets() []string {
 	return keys
 }
 
-func (r *Registry) register(aSet *set) {
+func (r *registry) register(aSet *set) {
 	r.mux.RLock()
 	key := aSet.xType.Name //TODO check if not nil
 	r.mux.RUnlock()
@@ -49,21 +49,21 @@ func (r *Registry) register(aSet *set) {
 }
 
 // Lookup returns a set by name
-func (r *Registry) Lookup(name string) *set {
+func (r *registry) Lookup(name string) *set {
 	r.mux.RLock()
 	aSet, _ := r.types[name]
 	r.mux.RUnlock()
 	return aSet
 }
 
-// NewRegistry creates a registry
-func NewRegistry() *Registry {
-	ret := &Registry{types: make(map[string]*set)}
+// newRegistry creates a registry
+func newRegistry() *registry {
+	ret := &registry{types: make(map[string]*set)}
 	return ret
 }
 
 // Merge merges registry
-func (r *Registry) Merge(registry *Registry) {
+func (r *registry) Merge(registry *registry) {
 	for _, aSet := range registry.types {
 		r.register(aSet)
 	}

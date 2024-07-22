@@ -28,7 +28,7 @@ type Statement struct {
 	//BaseURL    string
 	SQL          string
 	kind         sqlparser.Kind
-	sets         *Registry
+	sets         *registry
 	query        *query.Select
 	insert       *insert.Statement
 	update       *update.Statement
@@ -167,7 +167,7 @@ func (s *Statement) handleRegisterSet(args []driver.NamedValue) (driver.Result, 
 		ttlSec: register.TTL, //TODO use TTL with WritePolicy
 	}
 	if register.Global {
-		if err := RegisterGlobalSet(aSet); err != nil {
+		if err := registerSet(aSet); err != nil {
 			return nil, err
 		}
 	}
