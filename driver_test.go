@@ -527,6 +527,25 @@ func Test_QueryContext(t *testing.T) {
 
 	var testCases = testCases{
 		{
+			description: "insert record - with pointer params",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "INSERT INTO Foo(Id,Name) VALUES(?,?)",
+			execParams:  []interface{}{intPtr(1), stringPtr("foo inserted")},
+			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
+			init: []string{
+				"DELETE FROM Foo",
+			},
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Foo{Id: 1, Name: "foo inserted"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := Foo{}
+				err := r.Scan(&foo.Id, &foo.Name)
+				return &foo, err
+			},
+		},
+		{
 			description: "count",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "INSERT INTO Msg$Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?)",
@@ -1406,6 +1425,9 @@ func Test_QueryContext(t *testing.T) {
 			tc.sets = sets
 		}
 	}
+
+	// testCases = testCases[0:1] //TODO DELETE
+
 	testCases.runTest(t)
 }
 
@@ -1562,4 +1584,12 @@ func modifyActual(src []interface{}) (interface{}, error) {
 		}
 	}
 	return result, nil
+}
+
+func intPtr(i int) *int {
+	return &i
+}
+
+func stringPtr(s string) *string {
+	return &s
 }

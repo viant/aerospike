@@ -68,7 +68,55 @@ func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 			if f.tag.UnixSec {
 				value = v.Unix()
 			}
+		} else if valueType.Kind() == reflect.Ptr {
+			var err error
+			value, err = extractValue(value)
+			if err != nil {
+				return nil, fmt.Errorf("unable to ensure valid value type due to: %w", err)
+			}
 		}
+	}
+
+	return value, nil
+}
+
+func extractValue(value interface{}) (interface{}, error) {
+	switch actual := value.(type) {
+	case *int64:
+		if actual == nil {
+			value = nil
+		}
+		value = int(*actual)
+	case *int32:
+		value = nil
+		value = int(*actual)
+	case *float64:
+		if actual == nil {
+			value = nil
+		}
+		value = int(*actual)
+	case *float32:
+		if actual == nil {
+			value = nil
+		}
+		value = int(*actual)
+	case *int16:
+		if actual == nil {
+			value = nil
+		}
+		value = int(*actual)
+	case *int:
+		if actual == nil {
+			value = nil
+		}
+		value = *actual
+	case *string:
+		if actual == nil {
+			value = nil
+		}
+		value = *actual
+	default:
+		return nil, fmt.Errorf("extractvalue - unsupported type %T", actual)
 	}
 	return value, nil
 }
