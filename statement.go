@@ -216,11 +216,11 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		return fmt.Errorf("unsupported expr type: %T", qualify.X)
 	}
 	pkName := "-"
-	if s.mapper != nil && len(s.mapper.pk) > 1 {
+	if s.mapper != nil && len(s.mapper.pk) == 1 {
 		pkName = s.mapper.pk[0].Column()
 	}
 	keyName := "--"
-	if s.mapper != nil && len(s.mapper.key) > 1 {
+	if s.mapper != nil && len(s.mapper.key) == 1 {
 		keyName = s.mapper.key[0].Column()
 	}
 	isMultiInPk := len(s.mapper.pk) > 1
