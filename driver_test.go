@@ -81,6 +81,15 @@ func Test_Meta(t *testing.T) {
 		IsAutoIncrement        int
 	}
 
+	type processlist struct {
+		PID      string
+		Username string
+		Region   string
+		Catalog  string
+		Schema   string
+		AppName  string
+	}
+
 	var testCases = testCases{
 		{
 			description:   "metadata: all schemas - all namespaces in db",
@@ -329,6 +338,40 @@ where pk in ('A02','A03')`,
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := tableColumn{}
 				err := r.Scan(&rec.TableCatalog, &rec.TableSchema, &rec.TableName, &rec.ColumnName, &rec.OrdinalPosition, &rec.ColumnComment, &rec.DataType, &rec.CharacterMaximumLength, &rec.NumericPrecision, &rec.NumericScale, &rec.IsNullable, &rec.ColumnDefault, &rec.ColumnKey, &rec.IsAutoIncrement)
+				return &rec, err
+			},
+		},
+		{
+			description:        "metadata: session",
+			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry:      true,
+			truncateNamespaces: true,
+			sets: []*parameterizedQuery{
+				{SQL: "REGISTER SET A01 AS struct{Id int; Name string}"},
+				{SQL: "REGISTER SET A02 AS struct{Id int; Name string}"},
+			},
+			querySQL: `select
+pid,
+user_name,
+region,
+catalog_name,
+schema_name,
+app_name
+from information_schema.processList`,
+			queryParams: []interface{}{},
+			expect: []interface{}{
+				&processlist{
+					PID:      "0",
+					Username: "test_name",
+					Region:   "",
+					Catalog:  "",
+					Schema:   "test",
+					AppName:  "",
+				},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := processlist{}
+				err := r.Scan(&rec.PID, &rec.Username, &rec.Region, &rec.Catalog, &rec.Schema, &rec.AppName)
 				return &rec, err
 			},
 		},

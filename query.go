@@ -42,6 +42,11 @@ func (s *Statement) registerMetaSets() error {
 				xType:  x.NewType(reflect.TypeOf(tableColumn{}), x.WithName("columns")),
 				ttlSec: 0,
 			})
+		case "processlist":
+			s.sets.register(&set{
+				xType:  x.NewType(reflect.TypeOf(processList{}), x.WithName("processList")),
+				ttlSec: 0,
+			})
 		default:
 			return fmt.Errorf("unsupported InformationSchema: %v", s.set)
 		}

@@ -34,6 +34,15 @@ type tableColumn struct {
 	IsAutoIncrement        int    `sqlx:"is_autoincrement" aerospike:"is_autoincrement"`
 }
 
+type processList struct {
+	PID      string `sqlx:"pid" aerospike:"pid,pk=true"`
+	Username string `sqlx:"user_name" aerospike:"user_name"`
+	Region   string `sqlx:"region" aerospike:"region"`
+	Catalog  string `sqlx:"catalog_name" aerospike:"catalog_name"`
+	Schema   string `sqlx:"schema_name" aerospike:"schema_name"`
+	AppName  string `sqlx:"app_name" aerospike:"app_name"`
+}
+
 func (s *Statement) handleInformationSchema(ctx context.Context, keys []*as.Key, rows *Rows) (driver.Rows, error) {
 	switch strings.ToLower(s.set) {
 	case "schemata":
@@ -42,6 +51,8 @@ func (s *Statement) handleInformationSchema(ctx context.Context, keys []*as.Key,
 		return s.handleTableSet(ctx, keys, rows)
 	case "columns":
 		return s.handleTableInfo(ctx, keys, rows)
+	case "processlist":
+		return s.handleSessionInfo(ctx, keys, rows)
 
 	}
 
@@ -163,6 +174,25 @@ func (s *Statement) handleTableSet(ctx context.Context, keys []*as.Key, rows *Ro
 		}
 		recs = append(recs, rec)
 	}
+
+	rows.rowsReader = newRowsReader(recs)
+	return rows, nil
+}
+
+func (s *Statement) handleSessionInfo(ctx context.Context, keys []*as.Key, rows *Rows) (driver.Rows, error) {
+	recs := make([]*as.Record, 0)
+
+	rec := &as.Record{
+		Bins: as.BinMap{
+			"pid":          "0",
+			"user_name":    "test_name",
+			"region":       "",
+			"catalog_name": "",
+			"schema_name":  s.cfg.namespace,
+			"app_name":     "",
+		},
+	}
+	recs = append(recs, rec)
 
 	rows.rowsReader = newRowsReader(recs)
 	return rows, nil
