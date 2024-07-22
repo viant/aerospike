@@ -34,7 +34,7 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 		column := sqlparser.Stringify(item.Column)
 		aField := s.mapper.getField(column)
 		if aField == nil {
-			return fmt.Errorf("unable to find field %v in type %T", column, s.recordType)
+			return fmt.Errorf("unable to find field %v in type %s", column, s.recordType.String())
 		}
 		var value interface{}
 		if item.IsExpr() {
