@@ -93,7 +93,7 @@ func (s *Statement) QueryContext(ctx context.Context, args []driver.NamedValue) 
 }
 
 func (s *Statement) setSet(set string) {
-	s.set = set
+	s.set = strings.ReplaceAll(set, "`", "")
 	if index := strings.Index(set, "."); index != -1 {
 		s.namespace = set[:index]
 		s.set = set[index+1:]
