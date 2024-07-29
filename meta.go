@@ -43,6 +43,10 @@ type processList struct {
 	AppName  string `sqlx:"app_name" aerospike:"app_name"`
 }
 
+type serverInfo struct {
+	Version string `sqlx:"version" aerospike:"version,pk=true"`
+}
+
 func (s *Statement) handleInformationSchema(ctx context.Context, keys []*as.Key, rows *Rows) (driver.Rows, error) {
 	switch strings.ToLower(s.set) {
 	case "schemata":
@@ -53,6 +57,8 @@ func (s *Statement) handleInformationSchema(ctx context.Context, keys []*as.Key,
 		return s.handleTableInfo(ctx, keys, rows)
 	case "processlist":
 		return s.handleSessionInfo(ctx, keys, rows)
+	case "serverinfo":
+		return s.handleVersion(ctx, keys, rows)
 
 	}
 
@@ -195,5 +201,27 @@ func (s *Statement) handleSessionInfo(ctx context.Context, keys []*as.Key, rows 
 	recs = append(recs, rec)
 
 	rows.rowsReader = newRowsReader(recs)
+	return rows, nil
+}
+
+func (s *Statement) handleVersion(ctx context.Context, keys []*as.Key, rows *Rows) (driver.Rows, error) {
+	aNodes := s.client.Cluster().GetNodes()
+	if len(aNodes) == 0 {
+		return nil, fmt.Errorf("no nodes available")
+	}
+	aNode := aNodes[0]
+
+	values, err := aNode.RequestInfo(as.NewInfoPolicy(), "version")
+	if err != nil {
+		return nil, fmt.Errorf("error fetching version info for node %v due to: %w", aNode, err)
+	}
+
+	rec := &as.Record{
+		Bins: as.BinMap{
+			"version": values["version"],
+		},
+	}
+
+	rows.rowsReader = newRowsReader([]*as.Record{rec})
 	return rows, nil
 }

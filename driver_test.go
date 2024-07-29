@@ -90,6 +90,10 @@ func Test_Meta(t *testing.T) {
 		AppName  string
 	}
 
+	type version struct {
+		Version string
+	}
+
 	var testCases = testCases{
 		{
 			description:   "metadata: all schemas - all namespaces in db",
@@ -372,6 +376,19 @@ from information_schema.processlist`,
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := processlist{}
 				err := r.Scan(&rec.PID, &rec.Username, &rec.Region, &rec.Catalog, &rec.Schema, &rec.AppName)
+				return &rec, err
+			},
+		},
+		{
+			description:   "metadata: version",
+			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
+			resetRegistry: true,
+			querySQL:      `select version from information_schema.serverinfo`,
+			queryParams:   []interface{}{},
+			expect:        []interface{}{&version{Version: "Aerospike Community Edition build 6.2.0.2"}},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := version{}
+				err := r.Scan(&rec.Version)
 				return &rec, err
 			},
 		},
