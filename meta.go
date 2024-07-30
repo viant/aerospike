@@ -225,7 +225,7 @@ func (s *Statement) handleVersion(ctx context.Context, keys []*as.Key, rows *Row
 	// instead using real version we use hardcoded name with no version info
 	rec := &as.Record{
 		Bins: as.BinMap{
-			"version": "Aerospike",
+			"version": "Aerospike 6.0.0.0",
 		},
 	}
 
