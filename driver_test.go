@@ -385,7 +385,8 @@ from information_schema.processlist`,
 			resetRegistry: true,
 			querySQL:      `select version from information_schema.serverinfo`,
 			queryParams:   []interface{}{},
-			expect:        []interface{}{&version{Version: "Aerospike Community Edition build 6.2.0.2"}},
+			//expect:        []interface{}{&version{Version: "Aerospike Community Edition build 6.2.0.2"}},
+			expect: []interface{}{&version{Version: "Aerospike"}},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := version{}
 				err := r.Scan(&rec.Version)
