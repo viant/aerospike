@@ -544,6 +544,20 @@ func Test_QueryContext(t *testing.T) {
 
 	var testCases = testCases{
 		{
+			description: "nested sql ",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id FROM (SELECT * FROM SimpleAgg WHERE 1 = 0)",
+			init: []string{
+				"DELETE FROM SimpleAgg",
+			},
+			expect: []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := SimpleAgg{}
+				err := r.Scan(&agg.Id, &agg.Amount)
+				return &agg, err
+			},
+		},
+		{
 			description: "false predicate ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT * FROM SimpleAgg WHERE 1 = 0",

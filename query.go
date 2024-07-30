@@ -6,6 +6,8 @@ import (
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
+	"github.com/viant/sqlparser/expr"
+	"github.com/viant/sqlparser/query"
 	"github.com/viant/x"
 	"github.com/viant/xunsafe"
 	"reflect"
@@ -19,7 +21,16 @@ func (s *Statement) prepareSelect(SQL string) error {
 		return err
 	}
 
-	s.setSet(sqlparser.Stringify(s.query.From.X))
+	setName := sqlparser.Stringify(s.query.From.X)
+	if rawExpr, ok := s.query.From.X.(*expr.Raw); ok {
+		if innerQuery, ok := rawExpr.X.(*query.Select); ok {
+			setName = sqlparser.Stringify(innerQuery.From.X)
+			if s.query.Qualify == nil {
+				s.query.Qualify = innerQuery.Qualify
+			}
+		}
+	}
+	s.setSet(setName)
 	return s.registerMetaSets()
 }
 
