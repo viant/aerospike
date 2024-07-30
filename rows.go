@@ -72,6 +72,10 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 		}
 		value, ok := record.Bins[aField.Column()]
 		if !ok {
+			if aField.Type.Kind() == reflect.Slice {
+				dest[i] = reflect.Zero(aField.Type).Interface()
+				continue
+			}
 			continue
 		}
 		srcType := reflect.TypeOf(value)

@@ -497,10 +497,11 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	type Qux struct {
-		Id   int      `aerospike:"id,pk=true"`
-		Seq  int      `aerospike:"seq,key=true"`
-		Name string   `aerospike:"name"`
-		List []string `aerospike:"list"`
+		Id    int      `aerospike:"id,pk=true"`
+		Seq   int      `aerospike:"seq,key=true"`
+		Name  string   `aerospike:"name"`
+		List  []string `aerospike:"list"`
+		Slice []string `aerospike:"slice"`
 	}
 
 	type Doc struct {
@@ -543,6 +544,29 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = testCases{
+		{
+			description: "get 1 record with all bins by PK with string list",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT * FROM Qux WHERE PK IN(?,?)",
+			init: []string{
+				"DELETE FROM Qux",
+				"INSERT INTO Qux(id,seq,name,list) VALUES(?,?,?,?),(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, 1, "List of strings 1", []string{"item1", "item2", "item3"}, 2, 1, "List of strings 2", nil},
+			},
+			queryParams: []interface{}{1, 2},
+			expect: []interface{}{
+				&Qux{Id: 1, Seq: 1, Name: "List of strings 1", List: []string{"item1", "item2", "item3"}},
+				&Qux{Id: 2, Seq: 1, Name: "List of strings 2", List: nil},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				qux := Qux{}
+				err := r.Scan(&qux.Id, &qux.Seq, &qux.Name, &qux.List, &qux.Slice)
+				return &qux, err
+			},
+		},
 		{
 			description: "nested sql ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -1273,28 +1297,7 @@ func Test_QueryContext(t *testing.T) {
 				return &doc, err
 			},
 		},
-		{
-			description: "get 1 record with all bins by PK with string list",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT * FROM Qux WHERE PK = ?",
-			init: []string{
-				"DELETE FROM Qux",
-				"INSERT INTO Qux(id,seq,name,list) VALUES(?,?,?,?)",
-			},
-			initParams: [][]interface{}{
-				{},
-				{1, 1, "List of strings 1", []string{"item1", "item2", "item3"}},
-			},
-			queryParams: []interface{}{1},
-			expect: []interface{}{
-				&Qux{Id: 1, Seq: 1, Name: "List of strings 1", List: []string{"item1", "item2", "item3"}},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				qux := Qux{}
-				err := r.Scan(&qux.Id, &qux.Seq, &qux.Name, &qux.List)
-				return &qux, err
-			},
-		},
+
 		{
 			description: "get 1 record by PK with 1 bin map value by key with string list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -1533,7 +1536,9 @@ func (s testCases) runTest(t *testing.T) {
 			var actual = make([]interface{}, 0)
 			for rows.Next() {
 				item, err := tc.scanner(rows)
-				assert.Nil(t, err, tc.description)
+				if !assert.Nil(t, err, tc.description) {
+					return
+				}
 				actual = append(actual, item)
 			}
 			sort.Slice(actual, func(i, j int) bool {
