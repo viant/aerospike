@@ -89,6 +89,12 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	if err := s.updateCriteria(s.query.Qualify, args, true); err != nil {
 		return nil, err
 	}
+
+	if s.falsePredicate {
+		rows.rowsReader = newRowsReader([]*as.Record{})
+		return rows, nil
+	}
+
 	keys, err := s.buildKeys()
 	if err != nil {
 		return nil, err

@@ -26,27 +26,28 @@ type Statement struct {
 	client *as.Client
 	cfg    *Config
 	//BaseURL    string
-	SQL          string
-	kind         sqlparser.Kind
-	sets         *registry
-	query        *query.Select
-	insert       *insert.Statement
-	update       *update.Statement
-	delete       *delete.Statement
-	mapper       *mapper
-	filter       *as.Filter
-	rangeFilter  *rangeBinFilter
-	recordType   reflect.Type
-	record       interface{}
-	numInput     int
-	set          string
-	mapBin       string
-	listBin      string
-	namespace    string
-	pkValues     []interface{}
-	keyValues    []interface{}
-	lastInsertID *int64
-	affected     int64
+	SQL            string
+	kind           sqlparser.Kind
+	sets           *registry
+	query          *query.Select
+	insert         *insert.Statement
+	update         *update.Statement
+	delete         *delete.Statement
+	mapper         *mapper
+	filter         *as.Filter
+	rangeFilter    *rangeBinFilter
+	recordType     reflect.Type
+	falsePredicate bool
+	record         interface{}
+	numInput       int
+	set            string
+	mapBin         string
+	listBin        string
+	namespace      string
+	pkValues       []interface{}
+	keyValues      []interface{}
+	lastInsertID   *int64
+	affected       int64
 }
 
 // Exec executes statements
@@ -225,6 +226,15 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 	}
 	isMultiInPk := len(s.mapper.pk) > 1
 	isMultiInKey := len(s.mapper.key) > 1
+
+	if binary.Op == "=" {
+		if leftLiteral, ok := binary.X.(*expr.Literal); ok {
+			if rightLiteral, ok := binary.Y.(*expr.Literal); ok {
+				s.falsePredicate = !(leftLiteral.Value == rightLiteral.Value)
+				return nil
+			}
+		}
+	}
 
 	idx := 0
 	err := binary.Walk(func(ident node.Node, values *expr.Values, operator, parentOperator string) error {
