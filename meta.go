@@ -205,20 +205,27 @@ func (s *Statement) handleSessionInfo(ctx context.Context, keys []*as.Key, rows 
 }
 
 func (s *Statement) handleVersion(ctx context.Context, keys []*as.Key, rows *Rows) (driver.Rows, error) {
-	aNodes := s.client.Cluster().GetNodes()
-	if len(aNodes) == 0 {
-		return nil, fmt.Errorf("no nodes available")
-	}
-	aNode := aNodes[0]
+	//aNodes := s.client.Cluster().GetNodes()
+	//if len(aNodes) == 0 {
+	//	return nil, fmt.Errorf("no nodes available")
+	//}
+	//aNode := aNodes[0]
+	//
+	//values, err := aNode.RequestInfo(as.NewInfoPolicy(), "version")
+	//if err != nil {
+	//	return nil, fmt.Errorf("error fetching version info for node %v due to: %w", aNode, err)
+	//}
+	//
+	//rec := &as.Record{
+	//	Bins: as.BinMap{
+	//		"version": values["version"],
+	//	},
+	//}
 
-	values, err := aNode.RequestInfo(as.NewInfoPolicy(), "version")
-	if err != nil {
-		return nil, fmt.Errorf("error fetching version info for node %v due to: %w", aNode, err)
-	}
-
+	// instead using real version we use hardcoded name with no version info
 	rec := &as.Record{
 		Bins: as.BinMap{
-			"version": values["version"],
+			"version": "Aerospike 6.0.0.0",
 		},
 	}
 
