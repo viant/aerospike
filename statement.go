@@ -57,17 +57,22 @@ func (s *Statement) Exec(args []driver.Value) (driver.Result, error) {
 
 // ExecContext executes statements
 func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	var err error
 	switch s.kind {
 	case sqlparser.KindRegisterSet:
 		return s.handleRegisterSet(args)
 	case sqlparser.KindInsert:
-		s.handleInsert(args)
+		err = s.handleInsert(args)
 	case sqlparser.KindUpdate:
-		s.handleUpdate(args)
+		err = s.handleUpdate(args)
 	case sqlparser.KindDelete:
 		return nil, s.handleDelete(args)
 	case sqlparser.KindSelect:
 		return nil, fmt.Errorf("unsupported parameterizedQuery type: %v", s.kind)
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	ret := &result{totalRows: s.affected}

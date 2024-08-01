@@ -115,6 +115,16 @@ func extractValue(value interface{}) (interface{}, error) {
 			value = nil
 		}
 		value = *actual
+	case **time.Time: // TODO time handling
+		if actual == nil {
+			value = nil
+		}
+		valuePtr := *actual
+		if valuePtr == nil {
+			value = nil
+		}
+		tValue := *valuePtr
+		value = tValue.String()
 	default:
 		return nil, fmt.Errorf("extractvalue - unsupported type %T", actual)
 	}
