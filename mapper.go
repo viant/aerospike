@@ -41,6 +41,9 @@ type (
 
 func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 	valueType := reflect.TypeOf(value)
+	if valueType == nil {
+		valueType = f.Type
+	}
 	if valueType.Kind() == f.Type.Kind() {
 		if valueType == timeType {
 			v, ok := value.(time.Time)
