@@ -68,7 +68,7 @@ func (s *Statement) handleCreateIndex(args []driver.NamedValue) (driver.Result, 
 			if err == nil {
 				err = <-task.OnComplete()
 			}
-			return nil, err
+			return &result{}, err
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
