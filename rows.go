@@ -1,6 +1,7 @@
 package aerospike
 
 import (
+	"context"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ type Rows struct {
 	record        interface{}
 	rowsReader    rowsIterator
 	processedRows uint64
+	ctx           context.Context
 }
 
 // Columns returns parameterizedQuery columns
@@ -42,7 +44,7 @@ func (r *Rows) Close() error {
 
 // Next moves to next row
 func (r *Rows) Next(dest []driver.Value) error {
-	record, err := r.rowsReader.Read()
+	record, err := r.rowsReader.Read(r.ctx)
 	if errors.Is(err, as.ErrRecordsetClosed) {
 		return io.EOF
 	}

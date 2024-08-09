@@ -1,28 +1,33 @@
 package aerospike
 
 import (
+	"context"
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"io"
 )
 
 type rowsIterator interface {
-	Read() (record *as.Record, err error)
+	Read(ctx context.Context) (record *as.Record, err error)
 }
 
 type RowsScanReader struct {
 	*as.Recordset
 }
 
-func (r *RowsScanReader) Read() (*as.Record, error) {
+func (r *RowsScanReader) Read(ctx context.Context) (*as.Record, error) {
 	if r.Recordset == nil {
 		return nil, io.EOF
 	}
 	channel := r.Recordset.Results()
-	result, ok := <-channel
-	if !ok || result.Record == nil {
-		return nil, io.EOF
+	select {
+	case result, ok := <-channel:
+		if !ok || result.Record == nil {
+			return nil, io.EOF
+		}
+		return result.Record, result.Err
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	return result.Record, nil
 }
 
 type RowsReader struct {
@@ -30,7 +35,7 @@ type RowsReader struct {
 	records []*as.Record
 }
 
-func (r *RowsReader) Read() (record *as.Record, err error) {
+func (r *RowsReader) Read(ctx context.Context) (record *as.Record, err error) {
 	if r.index >= len(r.records) {
 		return nil, io.EOF
 	}

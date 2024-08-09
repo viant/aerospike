@@ -96,6 +96,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		recordType: s.recordType,
 		mapper:     aMapper,
 		query:      s.query,
+		ctx:        ctx,
 	}
 	if err := s.updateCriteria(s.query.Qualify, args, true); err != nil {
 		return nil, err
@@ -119,7 +120,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 		} else {
 			// Set a filter to query the secondary index
-			if err = stmt.SetFilter(as.NewEqualFilter(s.mapper.index.Name, s.indexValues[0])); err != nil {
+			if err = stmt.SetFilter(as.NewEqualFilter(s.mapper.index.Column(), s.indexValues[0])); err != nil {
 				return nil, err
 			}
 		}
