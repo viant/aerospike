@@ -31,6 +31,7 @@ type (
 		fields          []field
 		pk              []*field
 		key             []*field
+		index           *field
 		listKey         bool
 		mapKey          bool
 		byName          map[string]int
@@ -181,6 +182,10 @@ func (m *mapper) addField(aField reflect.StructField, tag *Tag) *field {
 			m.listKey = true
 		}
 	}
+	if tag.IsIndex {
+		m.index = mapperField
+	}
+
 	fuzzName := strings.ReplaceAll(strings.ToLower(tag.Name), "_", "")
 	m.byName[tag.Name] = idx
 	m.byName[fuzzName] = idx

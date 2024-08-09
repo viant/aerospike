@@ -11,7 +11,9 @@ import (
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/delete"
 	"github.com/viant/sqlparser/expr"
+	"github.com/viant/sqlparser/index"
 	"github.com/viant/sqlparser/insert"
+
 	"github.com/viant/sqlparser/node"
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/sqlparser/update"
@@ -33,6 +35,8 @@ type Statement struct {
 	insert         *insert.Statement
 	update         *update.Statement
 	delete         *delete.Statement
+	createIndex    *index.Create
+	dropIndex      *index.Drop
 	mapper         *mapper
 	filter         *as.Filter
 	rangeFilter    *rangeBinFilter
@@ -46,6 +50,7 @@ type Statement struct {
 	namespace      string
 	pkValues       []interface{}
 	keyValues      []interface{}
+	indexValues    []interface{}
 	lastInsertID   *int64
 	affected       int64
 }
@@ -57,20 +62,30 @@ func (s *Statement) Exec(args []driver.Value) (driver.Result, error) {
 
 // ExecContext executes statements
 func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	ret := &result{totalRows: s.affected}
+
 	switch s.kind {
 	case sqlparser.KindRegisterSet:
 		return s.handleRegisterSet(args)
 	case sqlparser.KindInsert:
-		s.handleInsert(args)
+		if err := s.handleInsert(args); err != nil {
+			return nil, err
+		}
 	case sqlparser.KindUpdate:
-		s.handleUpdate(args)
+		if err := s.handleUpdate(args); err != nil {
+			return nil, err
+		}
 	case sqlparser.KindDelete:
 		return nil, s.handleDelete(args)
 	case sqlparser.KindSelect:
 		return nil, fmt.Errorf("unsupported parameterizedQuery type: %v", s.kind)
+	case sqlparser.KindDropIndex:
+		return s.handleDropIndex(args)
+	case sqlparser.KindCreateIndex:
+		return s.handleCreateIndex(args)
+
 	}
 
-	ret := &result{totalRows: s.affected}
 	if s.lastInsertID != nil {
 		ret.lastInsertedID = *s.lastInsertID
 		ret.hasLastInsertedID = true
@@ -227,7 +242,7 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 	}
 	isMultiInPk := len(s.mapper.pk) > 1
 	isMultiInKey := len(s.mapper.key) > 1
-
+	isIndexKey := s.mapper.index != nil
 	if binary.Op == "=" {
 		if leftLiteral, ok := binary.X.(*expr.Literal); ok {
 			if rightLiteral, ok := binary.Y.(*expr.Literal); ok {
@@ -255,6 +270,12 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		//TODO add support for multi in (col1,col2) IN((?, ?), (?, ?))
 		if isMultiInKey {
 
+		}
+		if isIndexKey {
+			if name == s.mapper.index.Column() {
+				s.indexValues = exprValues
+				return nil
+			}
 		}
 		switch name {
 		case "pk", pkName:

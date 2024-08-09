@@ -52,6 +52,16 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 			return nil, err
 		}
 	case sqlparser.KindRegisterSet:
+	case sqlparser.KindCreateIndex:
+		if err := stmt.prepareCreateIndex(SQL); err != nil {
+			return nil, err
+		}
+		return stmt, nil
+	case sqlparser.KindDropIndex:
+		if err := stmt.prepareDropIndex(SQL); err != nil {
+			return nil, err
+		}
+		return stmt, nil
 	default:
 		return nil, fmt.Errorf("unsupported kind: %v for DDL: %v", kind, SQL)
 	}

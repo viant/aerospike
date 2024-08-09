@@ -527,6 +527,12 @@ func Test_QueryContext(t *testing.T) {
 		Name string
 	}
 
+	type User struct {
+		UID    string `aerospike:"uid,pk"`
+		Email  string `aerospike:"email,index"`
+		Active bool   `aerospike:"active"`
+	}
+
 	var sets = []*parameterizedQuery{
 		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}"},
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
@@ -538,6 +544,7 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET BazPtr AS ?", params: []interface{}{BazPtr{}}},
 		{SQL: "REGISTER SET Msg AS ?", params: []interface{}{Message{}}},
 		{SQL: "REGISTER SET WITH TTL 2 Abc AS struct{Id int; Name string}"},
+		{SQL: "REGISTER SET users AS ?", params: []interface{}{User{}}},
 	}
 
 	type CountRec struct {
@@ -545,6 +552,25 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = testCases{
+		{
+			description: "secondary index ",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT * FROM users WHERE email = ?",
+			queryParams: []interface{}{"xxx@test.io"},
+			init: []string{
+				"DROP INDEX IF EXISTS UserEmail ON " + namespace + ".users",
+				"CREATE STRING INDEX UserEmail ON " + namespace + ".users(email)",
+				"DELETE FROM users",
+			},
+			execSQL:    "INSERT INTO users(uid,email,active) VALUES(?,?,?),(?,?,?)",
+			execParams: []interface{}{"1", "me@cpm.org", true, "2", "xxx@test.io", false},
+			expect:     []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := SimpleAgg{}
+				err := r.Scan(&agg.Id, &agg.Amount)
+				return &agg, err
+			},
+		},
 		{
 			description: "get 1 record with all bins by PK with string list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -572,6 +598,20 @@ func Test_QueryContext(t *testing.T) {
 			description: "nested sql ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id FROM (SELECT * FROM SimpleAgg WHERE 1 = 0)",
+			init: []string{
+				"DELETE FROM SimpleAgg",
+			},
+			expect: []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := SimpleAgg{}
+				err := r.Scan(&agg.Id, &agg.Amount)
+				return &agg, err
+			},
+		},
+		{
+			description: "false predicate ",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT * FROM SimpleAgg WHERE 1 = 0",
 			init: []string{
 				"DELETE FROM SimpleAgg",
 			},
@@ -1468,14 +1508,13 @@ func Test_QueryContext(t *testing.T) {
 			sleepSec: 3,
 		},
 	}
-
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {
 			tc.sets = sets
 		}
 	}
 
-	// testCases = testCases[0:1] //TODO DELETE
+	//	testCases = testCases[0:1] //TODO DELETE
 
 	testCases.runTest(t)
 }

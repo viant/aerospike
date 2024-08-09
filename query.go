@@ -106,11 +106,36 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		return rows, nil
 	}
 
+	bins := s.mapper.expandBins()
+
+	if len(s.indexValues) > 0 {
+		stmt := as.NewStatement(s.namespace, s.set, bins...)
+		if s.rangeFilter != nil {
+			from := s.rangeFilter.begin
+			to := s.rangeFilter.end
+			// Set a filter to query the secondary index
+			if err = stmt.SetFilter(as.NewRangeFilter(s.mapper.index.Name, int64(from), int64(to))); err != nil {
+				return nil, err
+			}
+		} else {
+			// Set a filter to query the secondary index
+			if err = stmt.SetFilter(as.NewEqualFilter(s.mapper.index.Name, s.indexValues[0])); err != nil {
+				return nil, err
+			}
+		}
+		// Execute the query
+		recordset, err := s.client.Query(nil, stmt)
+		if err != nil {
+			return nil, err
+		}
+		rows.rowsReader = &RowsScanReader{Recordset: recordset}
+		return rows, nil
+	}
+
 	keys, err := s.buildKeys()
 	if err != nil {
 		return nil, err
 	}
-	bins := s.mapper.expandBins()
 	switch strings.ToLower(s.namespace) {
 	case "information_schema":
 		return s.handleInformationSchema(ctx, keys, rows)

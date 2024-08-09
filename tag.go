@@ -10,6 +10,7 @@ import (
 type Tag struct {
 	Name      string
 	IsPK      bool
+	IsIndex   bool
 	IsMapKey  bool
 	IsListKey bool
 	Ignore    bool
@@ -28,6 +29,14 @@ func (t *Tag) updateTagKey(key, value string) error {
 			t.IsPK = true
 		} else {
 			if t.IsPK, err = strconv.ParseBool(value); err != nil {
+				return err
+			}
+		}
+	case "index":
+		if value == "" {
+			t.IsIndex = true
+		} else {
+			if t.IsIndex, err = strconv.ParseBool(value); err != nil {
 				return err
 			}
 		}
