@@ -13,7 +13,7 @@ func (s *Statement) handleDropIndex(args []driver.NamedValue) (driver.Result, er
 	writePolicy := as.NewWritePolicy(0, 0)
 	err := s.client.DropIndex(writePolicy, s.dropIndex.Schema, s.dropIndex.Table, s.dropIndex.Name)
 	if s.dropIndex.IfExists {
-		return nil, nil
+		return &result{}, nil
 	}
 	return &result{}, err
 }
