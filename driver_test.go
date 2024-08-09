@@ -490,11 +490,32 @@ func Test_QueryContext(t *testing.T) {
 		Time *time.Time `aerospike:"time"`
 	}
 
+	type BazDoublePtr struct {
+		Id   int         `aerospike:"id,pk=true"`
+		Seq  int         `aerospike:"seq,key=true" `
+		Name string      `aerospike:"name"`
+		Time **time.Time `aerospike:"time"`
+	}
+
 	type BazUnix struct {
 		Id   int       `aerospike:"id,pk=true"`
 		Seq  int       `aerospike:"seq,key=true" `
 		Name string    `aerospike:"name"`
 		Time time.Time `aerospike:"time,unixsec"`
+	}
+
+	type BazUnixPtr struct {
+		Id   int        `aerospike:"id,pk=true"`
+		Seq  int        `aerospike:"seq,key=true" `
+		Name string     `aerospike:"name"`
+		Time *time.Time `aerospike:"time,unixsec"`
+	}
+
+	type BazUnixDoublePtr struct {
+		Id   int         `aerospike:"id,pk=true"`
+		Seq  int         `aerospike:"seq,key=true" `
+		Name string      `aerospike:"name"`
+		Time **time.Time `aerospike:"time,unixsec"`
 	}
 
 	type Qux struct {
@@ -540,8 +561,11 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET Agg AS ?", params: []interface{}{Agg{}}},
 		{SQL: "REGISTER SET Baz AS ?", params: []interface{}{Baz{}}},
 		{SQL: "REGISTER SET BazUnix AS ?", params: []interface{}{BazUnix{}}},
+		{SQL: "REGISTER SET BazUnixPtr AS ?", params: []interface{}{BazUnixPtr{}}},
+		{SQL: "REGISTER SET BazUnixDoublePtr AS ?", params: []interface{}{BazUnixDoublePtr{}}},
 		{SQL: "REGISTER SET Qux AS ?", params: []interface{}{Qux{}}},
 		{SQL: "REGISTER SET BazPtr AS ?", params: []interface{}{BazPtr{}}},
+		{SQL: "REGISTER SET BazDoublePtr AS ?", params: []interface{}{BazDoublePtr{}}},
 		{SQL: "REGISTER SET Msg AS ?", params: []interface{}{Message{}}},
 		{SQL: "REGISTER SET WITH TTL 2 Abc AS struct{Id int; Name string}"},
 		{SQL: "REGISTER SET users AS ?", params: []interface{}{User{}}},
@@ -1507,6 +1531,79 @@ func Test_QueryContext(t *testing.T) {
 			},
 			sleepSec: 3,
 		},
+		{
+			description: "get 1 record with all bins by PK - with time value stored as string, time double ptr in type",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM BazDoublePtr",
+				"INSERT INTO BazDoublePtr(id,seq,name,time) VALUES(1,1,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO BazDoublePtr(id,seq,name,time) VALUES(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{},
+				{2, 2, "Time formatted stored as string", "2021-01-06T05:00:00Z"},
+			},
+			querySQL:    "SELECT * FROM BazDoublePtr WHERE PK = ?",
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&BazDoublePtr{Id: 1, Seq: 1, Name: "Time formatted stored as string", Time: getTimeDoublePtr(getTime("2021-01-06T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bazPtr := BazDoublePtr{}
+				err := r.Scan(&bazPtr.Id, &bazPtr.Seq, &bazPtr.Name, &bazPtr.Time)
+				return &bazPtr, err
+			},
+		},
+
+		{
+			description: "get 1 record with all bins by PK - with time value stored as int, time ptr in type",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM BazUnixPtr",
+				"INSERT INTO BazUnixPtr(id,seq,name,time) VALUES(?,?,?,?)",
+				"INSERT INTO BazUnixPtr(id,seq,name,time) VALUES(2,2,'Time stored as int 2','2021-01-07T06:05:04Z')",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, 1, "Time stored as int", getTimePtr(getTime("2021-01-06T05:00:00Z"))},
+				{},
+			},
+			querySQL:    "SELECT * FROM BazUnixPtr WHERE PK = ?",
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&BazUnixPtr{Id: 1, Seq: 1, Name: "Time stored as int", Time: getTimePtr(getTime("2021-01-06T05:00:00Z").In(time.Local))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				baz := BazUnixPtr{}
+				err := r.Scan(&baz.Id, &baz.Seq, &baz.Name, &baz.Time)
+				return &baz, err
+			},
+		},
+		{
+			description: "get 1 record with all bins by PK - with time value stored as int, time double ptr in type",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM BazUnixDoublePtr",
+				"INSERT INTO BazUnixDoublePtr(id,seq,name,time) VALUES(?,?,?,?)",
+				"INSERT INTO BazUnixDoublePtr(id,seq,name,time) VALUES(2,2,'Time stored as int 2','2021-01-07T06:05:04Z')",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, 1, "Time stored as int", getTimePtr(getTime("2021-01-06T05:00:00Z"))},
+				{},
+			},
+			querySQL:    "SELECT * FROM BazUnixDoublePtr WHERE PK = ?",
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&BazUnixDoublePtr{Id: 1, Seq: 1, Name: "Time stored as int", Time: getTimeDoublePtr(getTime("2021-01-06T05:00:00Z").In(time.Local))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				baz := BazUnixDoublePtr{}
+				err := r.Scan(&baz.Id, &baz.Seq, &baz.Name, &baz.Time)
+				return &baz, err
+			},
+		},
 	}
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {
@@ -1620,6 +1717,11 @@ func getTime(formattedTime string) time.Time {
 
 func getTimePtr(t time.Time) *time.Time {
 	return &t
+}
+
+func getTimeDoublePtr(t time.Time) **time.Time {
+	ptr := &t
+	return &ptr
 }
 
 func truncateNamespace(dsn string) error {

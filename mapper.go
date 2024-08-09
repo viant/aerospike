@@ -15,6 +15,8 @@ import (
 
 var timeType = reflect.TypeOf(time.Time{})
 var timePtrType = reflect.TypeOf(&time.Time{})
+var timePtr = &time.Time{}
+var timeDoublePtrType = reflect.TypeOf(&timePtr)
 
 type (
 	field struct {
@@ -53,6 +55,25 @@ func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 			}
 			if f.tag.UnixSec {
 				value = v.Unix()
+			}
+		}
+		if valueType == timePtrType {
+			v, ok := value.(*time.Time)
+			if !ok {
+				return nil, fmt.Errorf("unable to ensure valid value type - invalid type %T expected %T", value, v)
+			}
+			if f.tag.UnixSec {
+				value = v.Unix()
+			}
+		}
+		if valueType == timeDoublePtrType {
+			v, ok := value.(**time.Time)
+			if !ok {
+				return nil, fmt.Errorf("unable to ensure valid value type - invalid type %T expected %T", value, v)
+			}
+			if f.tag.UnixSec {
+				vv := *v
+				value = vv.Unix()
 			}
 		}
 		return value, nil
@@ -119,6 +140,16 @@ func extractValue(value interface{}) (interface{}, error) {
 			value = nil
 		}
 		value = *actual
+	case **time.Time: // TODO time handling
+		if actual == nil {
+			value = nil
+		}
+		valuePtr := *actual
+		if valuePtr == nil {
+			value = nil
+		}
+		tValue := *valuePtr
+		value = tValue.Format(time.RFC3339)
 	default:
 		return nil, fmt.Errorf("extractvalue - unsupported type %T", actual)
 	}

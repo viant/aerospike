@@ -17,7 +17,8 @@ func (r *result) LastInsertId() (int64, error) {
 	if r.hasLastInsertedID {
 		return r.lastInsertedID, nil
 	}
-	return 0, errLastInsertID
+	// return 0, errLastInsertID
+	return -1, nil
 }
 
 // RowsAffected return affected rows

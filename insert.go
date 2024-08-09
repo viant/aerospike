@@ -132,8 +132,11 @@ func (s *Statement) mergeMaps(recKey interface{}, group map[interface{}]map[inte
 		return fmt.Errorf("handlelistinsert: unable to lookup set with name %s", s.set)
 	}
 
-	_, _ = s.client.Operate(as.NewWritePolicy(0, aSet.ttlSec), key, createOp...)
-	if _, err := s.client.Operate(as.NewWritePolicy(0, aSet.ttlSec), key, op...); err != nil {
+	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
+	writePolicy.SendKey = true
+
+	_, _ = s.client.Operate(writePolicy, key, createOp...)
+	if _, err := s.client.Operate(writePolicy, key, op...); err != nil {
 		return err
 	}
 	return nil
@@ -235,14 +238,14 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 
 	batchCount := len(s.insert.Values) / len(s.insert.Columns)
 	s.affected = int64(batchCount)
-	if batchCount > 1 {
-		if s.mapBin != "" {
-			if len(s.mapper.key) == 0 {
-				return fmt.Errorf("unable to find map key field")
-			}
-			return s.handleMapLoad(args)
+	//if batchCount > 1 { //TODO check impact on regular insert
+	if s.mapBin != "" {
+		if len(s.mapper.key) == 0 {
+			return fmt.Errorf("unable to find map key field")
 		}
+		return s.handleMapLoad(args)
 	}
+	//}
 
 	if s.listBin != "" {
 		return s.handleListInsert(args, batchCount)

@@ -11,9 +11,7 @@ import (
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/delete"
 	"github.com/viant/sqlparser/expr"
-	"github.com/viant/sqlparser/index"
 	"github.com/viant/sqlparser/insert"
-
 	"github.com/viant/sqlparser/node"
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/sqlparser/update"
@@ -86,6 +84,7 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 
 	}
 
+	ret := &result{totalRows: s.affected}
 	if s.lastInsertID != nil {
 		ret.lastInsertedID = *s.lastInsertID
 		ret.hasLastInsertedID = true
