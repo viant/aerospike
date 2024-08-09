@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"github.com/viant/sqlparser/index"
 
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/aerospike/aerospike-client-go/v6/types"
@@ -84,7 +85,6 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 
 	}
 
-	ret := &result{totalRows: s.affected}
 	if s.lastInsertID != nil {
 		ret.lastInsertedID = *s.lastInsertID
 		ret.hasLastInsertedID = true
