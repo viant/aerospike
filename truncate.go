@@ -17,5 +17,5 @@ func (s *Statement) parseTruncateTable(sql string) error {
 func (s *Statement) handleTruncateTable(args []driver.NamedValue) (driver.Result, error) {
 	policy := as.NewWritePolicy(0, 0)
 	err := s.client.Truncate(policy, s.namespace, s.set, nil)
-	return nil, err
+	return &result{}, err
 }
