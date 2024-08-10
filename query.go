@@ -45,7 +45,7 @@ func (s *Statement) registerMetaSets() error {
 			})
 		case "tables":
 			s.sets.register(&set{
-				xType:  x.NewType(reflect.TypeOf(table{}), x.WithName("tables")),
+				xType:  x.NewType(reflect.TypeOf(tableInfo{}), x.WithName("tables")),
 				ttlSec: 0,
 			})
 		case "columns":

@@ -584,14 +584,16 @@ func Test_QueryContext(t *testing.T) {
 			init: []string{
 				"DROP INDEX IF EXISTS UserEmail ON " + namespace + ".users",
 				"CREATE STRING INDEX UserEmail ON " + namespace + ".users(email)",
-				"DELETE FROM users",
+				"TRUNCATE TABLE users",
 			},
 			execSQL:    "INSERT INTO users(uid,email,active) VALUES(?,?,?),(?,?,?)",
 			execParams: []interface{}{"1", "me@cpm.org", true, "2", "xxx@test.io", false},
-			expect:     []interface{}{},
+			expect: []interface{}{
+				&User{UID: "2", Email: "xxx@test.io", Active: false},
+			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
-				agg := SimpleAgg{}
-				err := r.Scan(&agg.Id, &agg.Amount)
+				agg := User{}
+				err := r.Scan(&agg.UID, &agg.Email, &agg.Active)
 				return &agg, err
 			},
 		},
@@ -1747,7 +1749,7 @@ func truncateNamespace(dsn string) error {
 
 // /
 // Define a type for a slice of tables
-type tableSlice []table
+type tableSlice []tableInfo
 
 // Implement the sort.Interface for tableSlice
 
@@ -1768,9 +1770,9 @@ func (t tableSlice) Less(i, j int) bool {
 }
 
 func modifyActual(src []interface{}) (interface{}, error) {
-	var result []*table
+	var result []*tableInfo
 	for _, item := range src {
-		t, ok := item.(*table)
+		t, ok := item.(*tableInfo)
 		if !ok {
 			return nil, fmt.Errorf("expected type %T, got %T", t, item)
 		}

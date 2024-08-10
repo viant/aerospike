@@ -417,11 +417,6 @@ func (s *Statement) getKey(fields []*field, bins map[string]interface{}) interfa
 	return nil
 }
 
-func (s *Statement) handleTruncateTable(args []driver.NamedValue) (driver.Result, error) {
-	policy := as.NewWritePolicy(0, 0)
-	return nil, s.client.Truncate(policy, s.namespace, s.set, nil)
-}
-
 // IsKeyNotFound returns true if key not found error.
 func IsKeyNotFound(err error) bool {
 	if err == nil {
