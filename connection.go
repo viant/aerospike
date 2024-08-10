@@ -51,6 +51,10 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 		if err := stmt.prepareDelete(SQL); err != nil {
 			return nil, err
 		}
+	case sqlparser.KindTruncateTable:
+		if err := stmt.parseTruncateTable(SQL); err != nil {
+			return nil, err
+		}
 	case sqlparser.KindRegisterSet:
 	case sqlparser.KindCreateIndex:
 		if err := stmt.prepareCreateIndex(SQL); err != nil {

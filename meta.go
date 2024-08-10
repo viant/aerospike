@@ -13,7 +13,7 @@ type catalog struct {
 	SchemaName string `sqlx:"schema_name" aerospike:"schema_name,pk=true"`
 }
 
-type table struct {
+type tableInfo struct {
 	TableSchema string `sqlx:"table_schema" aerospike:"table_schema"`
 	TableName   string `sqlx:"table_name" aerospike:"table_name,pk=true"`
 }

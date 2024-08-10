@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/viant/sqlparser/index"
+	"github.com/viant/sqlparser/table"
 
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/aerospike/aerospike-client-go/v6/types"
@@ -34,6 +35,7 @@ type Statement struct {
 	insert         *insert.Statement
 	update         *update.Statement
 	delete         *delete.Statement
+	truncate       *table.Truncate
 	createIndex    *index.Create
 	dropIndex      *index.Drop
 	mapper         *mapper
@@ -82,7 +84,8 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 		return s.handleDropIndex(args)
 	case sqlparser.KindCreateIndex:
 		return s.handleCreateIndex(args)
-
+	case sqlparser.KindTruncateTable:
+		return s.handleTruncateTable(args)
 	}
 
 	if s.lastInsertID != nil {
@@ -412,6 +415,11 @@ func (s *Statement) getKey(fields []*field, bins map[string]interface{}) interfa
 		builder.WriteString(fmt.Sprintf("%v", bins[key.Column()]))
 	}
 	return nil
+}
+
+func (s *Statement) handleTruncateTable(args []driver.NamedValue) (driver.Result, error) {
+	policy := as.NewWritePolicy(0, 0)
+	return nil, s.client.Truncate(policy, s.namespace, s.set, nil)
 }
 
 // IsKeyNotFound returns true if key not found error.
