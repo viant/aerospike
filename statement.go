@@ -46,6 +46,7 @@ type Statement struct {
 	record         interface{}
 	numInput       int
 	set            string
+	source         string
 	mapBin         string
 	listBin        string
 	namespace      string
@@ -110,17 +111,18 @@ func (s *Statement) QueryContext(ctx context.Context, args []driver.NamedValue) 
 	return s.executeSelect(ctx, args)
 }
 
-func (s *Statement) setSet(set string) {
-	set = strings.ReplaceAll(set, "`", "")
-	s.set = set
-	if index := strings.Index(set, "."); index != -1 {
-		s.namespace = set[:index]
-		s.set = set[index+1:]
-		set = s.set
+func (s *Statement) setSet(source string) {
+	source = strings.ReplaceAll(source, "`", "")
+	s.set = source
+	s.source = source
+	if index := strings.Index(source, "."); index != -1 {
+		s.namespace = source[:index]
+		s.set = source[index+1:]
+		source = s.set
 	}
-	if index := strings.Index(set, "$"); index != -1 {
-		s.mapBin = set[index+1:]
-		s.set = set[:index]
+	if index := strings.Index(source, "$"); index != -1 {
+		s.mapBin = source[index+1:]
+		s.set = source[:index]
 	}
 }
 
@@ -242,6 +244,10 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 	if s.mapper != nil && len(s.mapper.key) == 1 {
 		keyName = s.mapper.key[0].Column()
 	}
+	indexName := "---"
+	if s.mapper != nil && s.mapper.index != nil {
+		indexName = s.mapper.index.Column()
+	}
 	isMultiInPk := len(s.mapper.pk) > 1
 	isMultiInKey := len(s.mapper.key) > 1
 	isIndexKey := s.mapper.index != nil
@@ -280,6 +286,8 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 			}
 		}
 		switch name {
+		case indexName:
+			s.indexValues = exprValues
 		case "pk", pkName:
 			s.pkValues = exprValues
 		case "key", keyName:
@@ -366,12 +374,10 @@ func (s *Statement) setTypeBasedMapper() error {
 	if s.set == "" {
 		return nil
 	}
-
-	aSet := s.sets.Lookup(s.set)
-	if aSet == nil {
-		return fmt.Errorf("executeselect: unable to lookup set with name %s", s.set)
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return fmt.Errorf("executeselect: unable to lookup set with name %s, %w", s.set, err)
 	}
-
 	err = s.setRecordType(aSet)
 	if err != nil {
 		return err

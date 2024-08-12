@@ -47,9 +47,9 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 		return s.handleMapMerge(groups)
 	}
 
-	aSet := s.sets.Lookup(s.set)
-	if aSet == nil {
-		return fmt.Errorf("handlelistinsert: unable to lookup set with name %s", s.set)
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return err
 	}
 
 	for keyValue, group := range groups {
@@ -101,6 +101,7 @@ func (s *Statement) handleMapMerge(groups map[interface{}]map[interface{}]map[in
 }
 
 func (s *Statement) mergeMaps(recKey interface{}, group map[interface{}]map[interface{}]interface{}, addColumn map[string]bool, subColumn map[string]bool) error {
+	var err error
 	key, err := as.NewKey(s.namespace, s.set, recKey)
 	if err != nil {
 		return err
@@ -127,9 +128,9 @@ func (s *Statement) mergeMaps(recKey interface{}, group map[interface{}]map[inte
 		}
 	}
 
-	aSet := s.sets.Lookup(s.set)
-	if aSet == nil {
-		return fmt.Errorf("handlelistinsert: unable to lookup set with name %s", s.set)
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return err
 	}
 
 	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
@@ -180,11 +181,10 @@ func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) er
 	var argIndex int
 	var operations = map[interface{}][]*as.Operation{}
 
-	aSet := s.sets.Lookup(s.set)
-	if aSet == nil {
-		return fmt.Errorf("handlelistinsert: unable to lookup set with name %s", s.set)
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return err
 	}
-
 	for i := 0; i < itemCount; i++ {
 		bins, err := s.populateInsertBins(args, &argIndex)
 		if err != nil {
@@ -227,10 +227,6 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		return fmt.Errorf("insert statement is not initialized")
 	}
 
-	if aType := s.sets.Lookup(s.set); aType != nil {
-		// TODO writePolicy with TTL if set
-	}
-
 	if len(s.mapper.pk) == 0 {
 		return fmt.Errorf("unable to find primary key field")
 	}
@@ -251,11 +247,10 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		return s.handleListInsert(args, batchCount)
 	}
 
-	aSet := s.sets.Lookup(s.set)
-	if aSet == nil {
-		return fmt.Errorf("handleinsert: unable to lookup set with name %s", s.set)
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return err
 	}
-
 	argIndex := 0
 	for b := 0; b < batchCount; b++ {
 		bins, err := s.populateInsertBins(args, &argIndex)

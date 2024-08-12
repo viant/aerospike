@@ -555,11 +555,11 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var sets = []*parameterizedQuery{
+		{SQL: "REGISTER SET Agg$Values AS ?", params: []interface{}{Agg{}}},
 		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}"},
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
-		{SQL: "REGISTER SET SimpleAgg AS ?", params: []interface{}{SimpleAgg{}}},
-		{SQL: "REGISTER SET Agg AS ?", params: []interface{}{Agg{}}},
 		{SQL: "REGISTER SET Baz AS ?", params: []interface{}{Baz{}}},
+		{SQL: "REGISTER SET SimpleAgg AS ?", params: []interface{}{SimpleAgg{}}},
 		{SQL: "REGISTER SET BazUnix AS ?", params: []interface{}{BazUnix{}}},
 		{SQL: "REGISTER SET BazUnixPtr AS ?", params: []interface{}{BazUnixPtr{}}},
 		{SQL: "REGISTER SET BazUnixDoublePtr AS ?", params: []interface{}{BazUnixDoublePtr{}}},
@@ -771,7 +771,7 @@ func Test_QueryContext(t *testing.T) {
 			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
-				"DELETE FROM Agg",
+				"DELETE FROM Agg$Values",
 				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,1,1,1)",
 				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,2,1,1)",
 				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(2,1,1,1)",
@@ -825,7 +825,7 @@ func Test_QueryContext(t *testing.T) {
 			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
-				"DELETE FROM Agg",
+				"DELETE FROM Agg$Values",
 				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,1,1,1)",
 				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,2,1,1)",
 				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(2,1,1,1)",
@@ -848,7 +848,7 @@ func Test_QueryContext(t *testing.T) {
 			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
-				"DELETE FROM Agg",
+				"DELETE FROM Agg$Values",
 			},
 			expect: []interface{}{
 				&Agg{Id: 1, Seq: 1, Amount: 11, Val: 111},
@@ -870,7 +870,7 @@ func Test_QueryContext(t *testing.T) {
 			querySQL:    "SELECT id, seq, amount, val FROM Agg$Values WHERE PK = ? AND KEY = ?",
 			queryParams: []interface{}{1, 1},
 			init: []string{
-				"DELETE FROM Agg",
+				"DELETE FROM Agg$Values",
 				"INSERT INTO Agg$Values(id,seq, amount, val) VALUES(1, 1, 1, 1)",
 			},
 			expect: []interface{}{

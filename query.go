@@ -71,12 +71,11 @@ func (s *Statement) registerMetaSets() error {
 }
 
 func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	aSet := s.sets.Lookup(s.set)
-	if aSet == nil {
-		return nil, fmt.Errorf("executeselect: unable to lookup set with name %s", s.set)
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return nil, err
 	}
-
-	err := s.setRecordType(aSet)
+	err = s.setRecordType(aSet)
 	if err != nil {
 		return nil, err
 	}
@@ -216,6 +215,17 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		}
 	}
 	return rows, nil
+}
+
+func (s *Statement) lookupSet() (*set, error) {
+	aSet := s.sets.Lookup(s.source)
+	if aSet == nil {
+		aSet = s.sets.Lookup(s.set)
+		if aSet == nil {
+			return nil, fmt.Errorf("executeselect: unable to lookup set with name %s", s.set)
+		}
+	}
+	return aSet, nil
 }
 
 func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, error) {
