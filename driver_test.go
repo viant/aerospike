@@ -1836,7 +1836,7 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	testCases = testCases[0:1]
+	//testCases = testCases[0:1]
 
 	testCases.runTest(t)
 }
