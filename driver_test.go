@@ -798,7 +798,11 @@ func Test_QueryContext(t *testing.T) {
 			description: "batch merge with map",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
-			execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
+			execParams: []interface{}{
+				1, 1, 11, 111,
+				1, 2, 12, 121,
+				2, 1, 11, 111,
+			},
 			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
@@ -1761,6 +1765,70 @@ func Test_QueryContext(t *testing.T) {
 				return &bar, err
 			},
 		},
+		{
+			description: "get 2 records with all bins by PK aggregation with map - struct with ptrs",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM barPtr",
+				"INSERT INTO barPtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{
+					1, 1, 11, 1.25, "Time 1", "2021-01-06T05:00:00Z",
+					1, 2, 22, 2.25, "Time 2", "2021-01-08T05:00:00Z",
+				},
+			},
+			execSQL: "INSERT INTO barPtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount, price = price + new.price, name = new.name, time = new.time",
+			execParams: []interface{}{
+				1, 1, 11, 1.25, "Time 11", "2021-01-26T05:00:00Z",
+				1, 2, 22, 2.25, "Time 22", "2021-01-28T05:00:00Z",
+			},
+
+			querySQL:    "SELECT * FROM barPtr$Values WHERE PK IN (?) AND KEY IN (?,?)",
+			queryParams: []interface{}{1, 1, 2},
+			expect: []interface{}{
+				&BarPtr{Id: 1, Seq: 1, Amount: getIntPtr(22), Price: getFloatPtr(2.5), Name: getStringPtr("Time 11"), Time: getTimePtr(getTime("2021-01-26T05:00:00Z"))},
+				&BarPtr{Id: 1, Seq: 2, Amount: getIntPtr(44), Price: getFloatPtr(4.5), Name: getStringPtr("Time 22"), Time: getTimePtr(getTime("2021-01-28T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := BarPtr{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
+		{
+			description: "get 2 records with all bins by PK aggregation with map - struct with double ptrs",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM barDoublePtr",
+				"INSERT INTO barDoublePtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{
+					1, 1, 11, 1.25, "Time 1", "2021-01-06T05:00:00Z",
+					1, 2, 22, 2.25, "Time 2", "2021-01-08T05:00:00Z",
+				},
+			},
+			execSQL: "INSERT INTO barDoublePtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount, price = price + new.price, name = new.name, time = new.time",
+			execParams: []interface{}{
+				1, 1, 11, 1.25, "Time 11", "2021-01-26T05:00:00Z",
+				1, 2, 22, 2.25, "Time 22", "2021-01-28T05:00:00Z",
+			},
+
+			querySQL:    "SELECT * FROM barDoublePtr$Values WHERE PK IN (?) AND KEY IN (?,?)",
+			queryParams: []interface{}{1, 1, 2},
+			expect: []interface{}{
+				&BarDoublePtr{Id: 1, Seq: 1, Amount: getIntDoublePtr(22), Price: getFloatDoublePtr(2.5), Name: getStringDoublePtr("Time 11"), Time: getTimeDoublePtr(getTime("2021-01-26T05:00:00Z"))},
+				&BarDoublePtr{Id: 1, Seq: 2, Amount: getIntDoublePtr(44), Price: getFloatDoublePtr(4.5), Name: getStringDoublePtr("Time 22"), Time: getTimeDoublePtr(getTime("2021-01-28T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := BarDoublePtr{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
 	}
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {
@@ -1768,7 +1836,7 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	//testCases = testCases[0:1]
+	testCases = testCases[0:1]
 
 	testCases.runTest(t)
 }
