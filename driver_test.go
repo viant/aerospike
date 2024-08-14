@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"log"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 )
@@ -418,7 +419,7 @@ func Test_ExecContext(t *testing.T) {
 		{
 			description: "register inlined set",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			sql:         "REGISTER SET Bar AS struct{id int; name string}", //TODO is this struct usable when all fields are private?
+			sql:         "REGISTER SET BarPtr AS struct{id int; name string}", //TODO is this struct usable when all fields are private?
 		},
 		{
 			description: "register named set",
@@ -429,7 +430,7 @@ func Test_ExecContext(t *testing.T) {
 		{
 			description: "register inlined global set",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			sql:         "REGISTER GLOBAL SET Bar AS struct{id int; name string}",
+			sql:         "REGISTER GLOBAL SET BarPtr AS struct{id int; name string}",
 		},
 		{
 			description: "register named global set",
@@ -446,7 +447,7 @@ func Test_ExecContext(t *testing.T) {
 		{
 			description: "register inlined global set with ttl",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			sql:         "REGISTER GLOBAL SET WITH TTL 100 Bar AS struct{id int; name string}",
+			sql:         "REGISTER GLOBAL SET WITH TTL 100 BarPtr AS struct{id int; name string}",
 		},
 	}
 
@@ -555,6 +556,15 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	type Bar struct {
+		Id     int       `aerospike:"id,pk=true"`
+		Seq    int       `aerospike:"seq,key=true"`
+		Amount int       `aerospike:"amount"`
+		Price  float64   `aerospike:"price"`
+		Name   string    `aerospike:"name"`
+		Time   time.Time `aerospike:"time"`
+	}
+
+	type BarPtr struct {
 		Id     int        `aerospike:"id,pk=true"`
 		Seq    int        `aerospike:"seq,key=true"`
 		Amount *int       `aerospike:"amount"`
@@ -588,6 +598,7 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET WITH TTL 2 Abc AS struct{Id int; Name string}"},
 		{SQL: "REGISTER SET users AS ?", params: []interface{}{User{}}},
 		{SQL: "REGISTER SET bar AS ?", params: []interface{}{Bar{}}},
+		{SQL: "REGISTER SET barPtr AS ?", params: []interface{}{BarPtr{}}},
 		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,key=true\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
 	}
 
@@ -1628,7 +1639,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 2 records with all bins by PK - struct with ptrs",
+			description: "get 2 records with all bins by PK - struct with no ptrs",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM bar",
@@ -1643,8 +1654,8 @@ func Test_QueryContext(t *testing.T) {
 			querySQL:    "SELECT * FROM bar WHERE PK IN (?,?)",
 			queryParams: []interface{}{1, 2},
 			expect: []interface{}{
-				&Bar{Id: 1, Seq: 1, Amount: getIntPtr(11), Price: getFloatPtr(1.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
-				&Bar{Id: 2, Seq: 2, Amount: getIntPtr(22), Price: getFloatPtr(2.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-08T05:00:00Z"))},
+				&Bar{Id: 1, Seq: 1, Amount: 11, Price: 1.25, Name: "Time formatted stored as string", Time: getTime("2021-01-06T05:00:00Z")},
+				&Bar{Id: 2, Seq: 2, Amount: 22, Price: 2.25, Name: "Time formatted stored as string", Time: getTime("2021-01-08T05:00:00Z")},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				bar := Bar{}
@@ -1653,23 +1664,96 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 2 records with all bins by PK - struct with double ptrs",
+			description: "get 2 records with all bins by PK - struct with ptrs",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
-				"DELETE FROM bar",
-				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
-				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
+				"DELETE FROM barPtr",
+				"INSERT INTO barPtr(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO barPtr(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
 			},
 			initParams: [][]interface{}{
 				{},
 				{},
 				{2, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
 			},
-			querySQL:    "SELECT * FROM bar WHERE PK IN (?,?)",
+			querySQL:    "SELECT * FROM barPtr WHERE PK IN (?,?)",
+			queryParams: []interface{}{1, 2},
+			expect: []interface{}{
+				&BarPtr{Id: 1, Seq: 1, Amount: getIntPtr(11), Price: getFloatPtr(1.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
+				&BarPtr{Id: 2, Seq: 2, Amount: getIntPtr(22), Price: getFloatPtr(2.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-08T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := BarPtr{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
+		{
+			description: "get 2 records with all bins by PK - struct with double ptrs",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM barDoublePtr",
+				"INSERT INTO barDoublePtr(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO barDoublePtr(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{},
+				{2, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
+			},
+			querySQL:    "SELECT * FROM barDoublePtr WHERE PK IN (?,?)",
 			queryParams: []interface{}{1, 2},
 			expect: []interface{}{
 				&BarDoublePtr{Id: 1, Seq: 1, Amount: getIntDoublePtr(11), Price: getFloatDoublePtr(1.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-06T05:00:00Z"))},
 				&BarDoublePtr{Id: 2, Seq: 2, Amount: getIntDoublePtr(22), Price: getFloatDoublePtr(2.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-08T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := BarDoublePtr{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
+		{
+			description: "get 2 records with all bins by PK with map - struct with ptrs",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM barPtr",
+				"INSERT INTO barPtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, 1, 11, 1.25, "Time formatted stored as string", "2021-01-06T05:00:00Z", 1, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
+			},
+			querySQL:    "SELECT * FROM barPtr$Values WHERE PK IN (?) AND KEY IN (?,?)",
+			queryParams: []interface{}{1, 1, 2},
+			expect: []interface{}{
+				&BarPtr{Id: 1, Seq: 1, Amount: getIntPtr(11), Price: getFloatPtr(1.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
+				&BarPtr{Id: 1, Seq: 2, Amount: getIntPtr(22), Price: getFloatPtr(2.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-08T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := BarPtr{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
+		{
+			description: "get 2 records with all bins by PK with map - struct with double ptrs",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM barDoublePtr",
+				"INSERT INTO barDoublePtr$Value(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO barDoublePtr$Value(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{},
+				{1, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
+			},
+			querySQL:    "SELECT * FROM barDoublePtr$Value WHERE PK IN (?) AND KEY IN (?,?)",
+			queryParams: []interface{}{1, 1, 2},
+			expect: []interface{}{
+				&BarDoublePtr{Id: 1, Seq: 1, Amount: getIntDoublePtr(11), Price: getFloatDoublePtr(1.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-06T05:00:00Z"))},
+				&BarDoublePtr{Id: 1, Seq: 2, Amount: getIntDoublePtr(22), Price: getFloatDoublePtr(2.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-08T05:00:00Z"))},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				bar := BarDoublePtr{}
@@ -1691,11 +1775,12 @@ func Test_QueryContext(t *testing.T) {
 
 func (s tstCases) runTest(t *testing.T) {
 	ctx := context.Background()
+	wg := sync.WaitGroup{}
 	for _, tc := range s {
-
+		wg.Add(1)
 		fmt.Printf("running test: %v\n", tc.description)
 		t.Run(tc.description, func(t *testing.T) {
-
+			defer wg.Done()
 			if tc.truncateNamespaces {
 				err := truncateNamespace(tc.dsn)
 				if !assert.Nil(t, err, tc.description) {
@@ -1763,6 +1848,7 @@ func (s tstCases) runTest(t *testing.T) {
 
 			assert.Equal(t, tc.expect, actual, tc.description)
 		})
+		wg.Wait()
 	}
 }
 
