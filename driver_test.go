@@ -32,7 +32,7 @@ type (
 		justNActualRows    int
 	}
 
-	testCases          []*testCase
+	tstCases           []*testCase
 	parameterizedQuery struct {
 		SQL    string
 		params []interface{}
@@ -94,7 +94,7 @@ func Test_Meta(t *testing.T) {
 		Version string
 	}
 
-	var testCases = testCases{
+	var testCases = tstCases{
 		{
 			description:   "metadata: all schemas - all namespaces in db",
 			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
@@ -554,6 +554,24 @@ func Test_QueryContext(t *testing.T) {
 		Active bool   `aerospike:"active"`
 	}
 
+	type Bar struct {
+		Id     int        `aerospike:"id,pk=true"`
+		Seq    int        `aerospike:"seq,key=true"`
+		Amount *int       `aerospike:"amount"`
+		Price  *float64   `aerospike:"price"`
+		Name   *string    `aerospike:"name"`
+		Time   *time.Time `aerospike:"time"`
+	}
+
+	type BarDoublePtr struct {
+		Id     int         `aerospike:"id,pk=true"`
+		Seq    int         `aerospike:"seq,key=true"`
+		Amount **int       `aerospike:"amount"`
+		Price  **float64   `aerospike:"price"`
+		Name   **string    `aerospike:"name"`
+		Time   **time.Time `aerospike:"time"`
+	}
+
 	var sets = []*parameterizedQuery{
 		{SQL: "REGISTER SET Agg$Values AS ?", params: []interface{}{Agg{}}},
 		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}"},
@@ -569,13 +587,15 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET Msg AS ?", params: []interface{}{Message{}}},
 		{SQL: "REGISTER SET WITH TTL 2 Abc AS struct{Id int; Name string}"},
 		{SQL: "REGISTER SET users AS ?", params: []interface{}{User{}}},
+		{SQL: "REGISTER SET bar AS ?", params: []interface{}{Bar{}}},
+		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,key=true\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
 	}
 
 	type CountRec struct {
 		Count int
 	}
 
-	var testCases = testCases{
+	var testCases = tstCases{
 		{
 			description: "secondary index ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -1465,7 +1485,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 records by PK with 2 bin map values by key - with time value stored as int",
+			description: "get 2 records by PK with 2 bin map values by key - with time value stored as int",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM BazUnix",
@@ -1492,7 +1512,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record with all bins by PK - with time value stored as string, time ptr in type",
+			description: "get 2 records with all bins by PK - with time value stored as string, time ptr in type",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM BazPtr",
@@ -1502,12 +1522,13 @@ func Test_QueryContext(t *testing.T) {
 			initParams: [][]interface{}{
 				{},
 				{},
-				{2, 2, "Time formatted stored as string", "2021-01-06T05:00:00Z"},
+				{2, 2, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
 			},
-			querySQL:    "SELECT * FROM BazPtr WHERE PK = ?",
-			queryParams: []interface{}{1},
+			querySQL:    "SELECT * FROM BazPtr WHERE PK IN (?,?)",
+			queryParams: []interface{}{1, 2},
 			expect: []interface{}{
 				&BazPtr{Id: 1, Seq: 1, Name: "Time formatted stored as string", Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
+				&BazPtr{Id: 2, Seq: 2, Name: "Time formatted stored as string", Time: getTimePtr(getTime("2021-01-08T05:00:00Z"))},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				bazPtr := BazPtr{}
@@ -1606,6 +1627,56 @@ func Test_QueryContext(t *testing.T) {
 				return &baz, err
 			},
 		},
+		{
+			description: "get 2 records with all bins by PK - struct with ptrs",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM bar",
+				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{},
+				{2, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
+			},
+			querySQL:    "SELECT * FROM bar WHERE PK IN (?,?)",
+			queryParams: []interface{}{1, 2},
+			expect: []interface{}{
+				&Bar{Id: 1, Seq: 1, Amount: getIntPtr(11), Price: getFloatPtr(1.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
+				&Bar{Id: 2, Seq: 2, Amount: getIntPtr(22), Price: getFloatPtr(2.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-08T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := Bar{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
+		{
+			description: "get 2 records with all bins by PK - struct with double ptrs",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM bar",
+				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{},
+				{2, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
+			},
+			querySQL:    "SELECT * FROM bar WHERE PK IN (?,?)",
+			queryParams: []interface{}{1, 2},
+			expect: []interface{}{
+				&BarDoublePtr{Id: 1, Seq: 1, Amount: getIntDoublePtr(11), Price: getFloatDoublePtr(1.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-06T05:00:00Z"))},
+				&BarDoublePtr{Id: 2, Seq: 2, Amount: getIntDoublePtr(22), Price: getFloatDoublePtr(2.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-08T05:00:00Z"))},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := BarDoublePtr{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
 	}
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {
@@ -1613,12 +1684,12 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	//	testCases = testCases[0:1] //TODO DELETE
+	//testCases = testCases[0:1]
 
 	testCases.runTest(t)
 }
 
-func (s testCases) runTest(t *testing.T) {
+func (s tstCases) runTest(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range s {
 
@@ -1715,6 +1786,33 @@ func getTime(formattedTime string) time.Time {
 		result = time.Time{}
 	}
 	return result
+}
+
+func getStringPtr(s string) *string {
+	return &s
+}
+
+func getStringDoublePtr(s string) **string {
+	ptr := &s
+	return &ptr
+}
+
+func getIntPtr(i int) *int {
+	return &i
+}
+
+func getIntDoublePtr(i int) **int {
+	ptr := &i
+	return &ptr
+}
+
+func getFloatPtr(f float64) *float64 {
+	return &f
+}
+
+func getFloatDoublePtr(f float64) **float64 {
+	ptr := &f
+	return &ptr
 }
 
 func getTimePtr(t time.Time) *time.Time {

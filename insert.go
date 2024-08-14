@@ -233,6 +233,12 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	isMerge := len(s.insert.OnDuplicateKeyUpdate) > 0
 
 	batchCount := len(s.insert.Values) / len(s.insert.Columns)
+
+	mod := len(s.insert.Values) % len(s.insert.Columns)
+	if mod != 0 {
+		return fmt.Errorf("invalid insert values count: %v, expected multiple of %v", len(s.insert.Values), len(s.insert.Columns))
+	}
+
 	s.affected = int64(batchCount)
 	//if batchCount > 1 { //TODO check impact on regular insert
 	if s.mapBin != "" {
