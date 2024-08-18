@@ -64,6 +64,7 @@ func (s *Statement) Exec(args []driver.Value) (driver.Result, error) {
 
 // ExecContext executes statements
 func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	ret := &result{totalRows: s.affected}
 
 	switch s.kind {
 	case sqlparser.KindRegisterSet:
@@ -87,8 +88,6 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 	case sqlparser.KindTruncateTable:
 		return s.handleTruncateTable(args)
 	}
-
-	ret := &result{totalRows: s.affected}
 
 	if s.lastInsertID != nil {
 		ret.lastInsertedID = *s.lastInsertID
@@ -116,14 +115,14 @@ func (s *Statement) setSet(source string) {
 	source = strings.ReplaceAll(source, "`", "")
 	s.set = source
 	s.source = source
-	if idx := strings.Index(source, "."); idx != -1 {
-		s.namespace = source[:idx]
-		s.set = source[idx+1:]
+	if index := strings.Index(source, "."); index != -1 {
+		s.namespace = source[:index]
+		s.set = source[index+1:]
 		source = s.set
 	}
-	if idx := strings.Index(source, "$"); idx != -1 {
-		s.mapBin = source[idx+1:]
-		s.set = source[:idx]
+	if index := strings.Index(source, "/"); index != -1 {
+		s.mapBin = source[index+1:]
+		s.set = source[:index]
 	}
 }
 

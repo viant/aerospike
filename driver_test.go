@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"log"
 	"sort"
-	"sync"
 	"testing"
 	"time"
 )
@@ -33,7 +32,7 @@ type (
 		justNActualRows    int
 	}
 
-	tstCases           []*testCase
+	testCases          []*testCase
 	parameterizedQuery struct {
 		SQL    string
 		params []interface{}
@@ -95,7 +94,7 @@ func Test_Meta(t *testing.T) {
 		Version string
 	}
 
-	var testCases = tstCases{
+	var testCases = testCases{
 		{
 			description:   "metadata: all schemas - all namespaces in db",
 			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
@@ -419,7 +418,7 @@ func Test_ExecContext(t *testing.T) {
 		{
 			description: "register inlined set",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			sql:         "REGISTER SET BarPtr AS struct{id int; name string}", //TODO is this struct usable when all fields are private?
+			sql:         "REGISTER SET Bar AS struct{id int; name string}", //TODO is this struct usable when all fields are private?
 		},
 		{
 			description: "register named set",
@@ -430,7 +429,7 @@ func Test_ExecContext(t *testing.T) {
 		{
 			description: "register inlined global set",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			sql:         "REGISTER GLOBAL SET BarPtr AS struct{id int; name string}",
+			sql:         "REGISTER GLOBAL SET Bar AS struct{id int; name string}",
 		},
 		{
 			description: "register named global set",
@@ -447,7 +446,7 @@ func Test_ExecContext(t *testing.T) {
 		{
 			description: "register inlined global set with ttl",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			sql:         "REGISTER GLOBAL SET WITH TTL 100 BarPtr AS struct{id int; name string}",
+			sql:         "REGISTER GLOBAL SET WITH TTL 100 Bar AS struct{id int; name string}",
 		},
 	}
 
@@ -555,35 +554,8 @@ func Test_QueryContext(t *testing.T) {
 		Active bool   `aerospike:"active"`
 	}
 
-	type Bar struct {
-		Id     int       `aerospike:"id,pk=true"`
-		Seq    int       `aerospike:"seq,key=true"`
-		Amount int       `aerospike:"amount"`
-		Price  float64   `aerospike:"price"`
-		Name   string    `aerospike:"name"`
-		Time   time.Time `aerospike:"time"`
-	}
-
-	type BarPtr struct {
-		Id     int        `aerospike:"id,pk=true"`
-		Seq    int        `aerospike:"seq,key=true"`
-		Amount *int       `aerospike:"amount"`
-		Price  *float64   `aerospike:"price"`
-		Name   *string    `aerospike:"name"`
-		Time   *time.Time `aerospike:"time"`
-	}
-
-	type BarDoublePtr struct {
-		Id     int         `aerospike:"id,pk=true"`
-		Seq    int         `aerospike:"seq,key=true"`
-		Amount **int       `aerospike:"amount"`
-		Price  **float64   `aerospike:"price"`
-		Name   **string    `aerospike:"name"`
-		Time   **time.Time `aerospike:"time"`
-	}
-
 	var sets = []*parameterizedQuery{
-		{SQL: "REGISTER SET Agg$Values AS ?", params: []interface{}{Agg{}}},
+		{SQL: "REGISTER SET Agg/Values AS ?", params: []interface{}{Agg{}}},
 		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}"},
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
 		{SQL: "REGISTER SET Baz AS ?", params: []interface{}{Baz{}}},
@@ -597,16 +569,13 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET Msg AS ?", params: []interface{}{Message{}}},
 		{SQL: "REGISTER SET WITH TTL 2 Abc AS struct{Id int; Name string}"},
 		{SQL: "REGISTER SET users AS ?", params: []interface{}{User{}}},
-		{SQL: "REGISTER SET bar AS ?", params: []interface{}{Bar{}}},
-		{SQL: "REGISTER SET barPtr AS ?", params: []interface{}{BarPtr{}}},
-		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,key=true\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
 	}
 
 	type CountRec struct {
 		Count int
 	}
 
-	var testCases = tstCases{
+	var testCases = testCases{
 		{
 			description: "secondary index ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -715,10 +684,10 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "count",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO Msg$Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?)",
+			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message", 1, "eee"},
 
-			querySQL:    "SELECT COUNT(*) FROM Msg$Items WHERE PK = ?",
+			querySQL:    "SELECT COUNT(*) FROM Msg/Items WHERE PK = ?",
 			queryParams: []interface{}{1},
 			init: []string{
 				"DELETE FROM Msg",
@@ -735,10 +704,10 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "list insert with index criteria",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO Msg$Items(id,body) VALUES(?,?),(?,?),(?,?)",
+			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message"},
 
-			querySQL:    "SELECT id,seq,body FROM Msg$Items WHERE PK = ? AND KEY IN(?,?)",
+			querySQL:    "SELECT id,seq,body FROM Msg/Items WHERE PK = ? AND KEY IN(?,?)",
 			queryParams: []interface{}{1, 0, 2},
 			init: []string{
 				"DELETE FROM Msg",
@@ -776,10 +745,10 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "list insert",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO Msg$Items(id,body) VALUES(?,?),(?,?)",
+			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message"},
 
-			querySQL:    "SELECT id,seq,body FROM Msg$Items WHERE PK = ?",
+			querySQL:    "SELECT id,seq,body FROM Msg/Items WHERE PK = ?",
 			queryParams: []interface{}{1},
 			init: []string{
 				"DELETE FROM Msg",
@@ -797,19 +766,15 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "batch merge with map",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
-			execParams: []interface{}{
-				1, 1, 11, 111,
-				1, 2, 12, 121,
-				2, 1, 11, 111,
-			},
-			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
+			execSQL:     "INSERT INTO Agg/Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
+			execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
+			querySQL:    "SELECT id,seq,amount,val FROM Agg/Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
-				"DELETE FROM Agg$Values",
-				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,1,1,1)",
-				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,2,1,1)",
-				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(2,1,1,1)",
+				"DELETE FROM Agg/Values",
+				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(1,1,1,1)",
+				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(1,2,1,1)",
+				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(2,1,1,1)",
 			},
 			expect: []interface{}{
 				&Agg{Id: 1, Seq: 1, Amount: 12, Val: 112},
@@ -852,18 +817,18 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "batch merge with map",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
+			execSQL:     "INSERT INTO Agg/Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
 			execParams: []interface{}{
 				1, 1, 11, 111,
 				1, 2, 12, 121,
 				2, 1, 11, 111},
-			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
+			querySQL:    "SELECT id,seq,amount,val FROM Agg/Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
-				"DELETE FROM Agg$Values",
-				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,1,1,1)",
-				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(1,2,1,1)",
-				"INSERT INTO Agg$Values(id,seq,amount,val) VALUES(2,1,1,1)",
+				"DELETE FROM Agg/Values",
+				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(1,1,1,1)",
+				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(1,2,1,1)",
+				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(2,1,1,1)",
 			},
 			expect: []interface{}{
 				&Agg{Id: 1, Seq: 1, Amount: 12, Val: 112},
@@ -878,12 +843,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "batch map insert",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO Agg$Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?)",
+			execSQL:     "INSERT INTO Agg/Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?)",
 			execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
-			querySQL:    "SELECT id,seq,amount,val FROM Agg$Values WHERE PK = ? AND KEY IN(?, ?)",
+			querySQL:    "SELECT id,seq,amount,val FROM Agg/Values WHERE PK = ? AND KEY IN(?, ?)",
 			queryParams: []interface{}{1, 1, 2},
 			init: []string{
-				"DELETE FROM Agg$Values",
+				"DELETE FROM Agg/Values",
 			},
 			expect: []interface{}{
 				&Agg{Id: 1, Seq: 1, Amount: 11, Val: 111},
@@ -900,13 +865,13 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "update map bin with inc ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "UPDATE Agg$Values SET amount = amount + ?, val = val + 3  WHERE PK = ? AND KEY = ?",
+			execSQL:     "UPDATE Agg/Values SET amount = amount + ?, val = val + 3  WHERE PK = ? AND KEY = ?",
 			execParams:  []interface{}{10, 1, 1},
-			querySQL:    "SELECT id, seq, amount, val FROM Agg$Values WHERE PK = ? AND KEY = ?",
+			querySQL:    "SELECT id, seq, amount, val FROM Agg/Values WHERE PK = ? AND KEY = ?",
 			queryParams: []interface{}{1, 1},
 			init: []string{
-				"DELETE FROM Agg$Values",
-				"INSERT INTO Agg$Values(id,seq, amount, val) VALUES(1, 1, 1, 1)",
+				"DELETE FROM Agg/Values",
+				"INSERT INTO Agg/Values(id,seq, amount, val) VALUES(1, 1, 1, 1)",
 			},
 			expect: []interface{}{
 				&Agg{Id: 1, Seq: 1, Amount: 11, Val: 4},
@@ -1000,11 +965,11 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 1 bin map value by key",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
 			},
 			queryParams: []interface{}{1, 101},
 			expect: []interface{}{
@@ -1019,11 +984,11 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with all bin map values",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
 			},
 			queryParams: []interface{}{1},
 			expect: []interface{}{
@@ -1189,14 +1154,14 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 2 bin map values by key and between operator",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 99,'doc0')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 104,'doc4')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 99,'doc0')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 104,'doc4')",
 			},
 			queryParams: []interface{}{1, 101, 102},
 			expect: []interface{}{
@@ -1212,12 +1177,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 1 bin map values by key and between operator",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{1, 101, 101},
 			expect: []interface{}{
@@ -1232,12 +1197,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 0 bin map values by key and between operator",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{1, 900, 901},
 			expect:      []interface{}{},
@@ -1250,12 +1215,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 0 records by PK with 0 bin map values by key and between operator",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{901, 900, 901},
 			expect:      []interface{}{},
@@ -1268,12 +1233,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 1 bin map values by key",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{1, 101},
 			expect: []interface{}{
@@ -1288,12 +1253,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 0 bin map values by key",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{1, 901},
 			expect:      []interface{}{},
@@ -1306,12 +1271,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 0 record by PK with 0 bin map values by key",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY = ?",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{900, 901},
 			expect:      []interface{}{},
@@ -1324,13 +1289,13 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 2 bin map values by key list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 104,'doc4')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 104,'doc4')",
 			},
 			queryParams: []interface{}{1, 101, 104},
 			expect: []interface{}{
@@ -1346,12 +1311,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 1 bin map values by key list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{1, 101, 904},
 			expect: []interface{}{
@@ -1366,12 +1331,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 1 record by PK with 0 bin map values by key list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{1, 901, 904},
 			expect:      []interface{}{},
@@ -1384,12 +1349,12 @@ func Test_QueryContext(t *testing.T) {
 		{
 			description: "get 0 record by PK with 0 bin map values by key list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id, seq, name FROM Doc$Bars WHERE PK = ? AND KEY IN (?,?)",
+			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
 				"DELETE FROM Doc",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 100,'doc1')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 101,'doc2')",
-				"INSERT INTO Doc$Bars(id, seq, name) VALUES(1, 102,'doc3')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 100,'doc1')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 101,'doc2')",
+				"INSERT INTO Doc/Bars(id, seq, name) VALUES(1, 102,'doc3')",
 			},
 			queryParams: []interface{}{900, 901, 904},
 			expect:      []interface{}{},
@@ -1405,15 +1370,15 @@ func Test_QueryContext(t *testing.T) {
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM Qux",
-				"INSERT INTO Qux$Bars(id,seq,name,list) VALUES(?,?,?,?)",
-				"INSERT INTO Qux$Bars(id,seq,name,list) VALUES(?,?,?,?)",
+				"INSERT INTO Qux/Bars(id,seq,name,list) VALUES(?,?,?,?)",
+				"INSERT INTO Qux/Bars(id,seq,name,list) VALUES(?,?,?,?)",
 			},
 			initParams: [][]interface{}{
 				{},
 				{1, 1, "List of strings 1", []string{"item1", "item2", "item3"}},
 				{1, 2, "List of strings 2", []string{"item11", "item22", "item33"}},
 			},
-			querySQL:    "SELECT id, seq, name, list FROM Qux$Bars WHERE PK = ? AND KEY = ?",
+			querySQL:    "SELECT id, seq, name, list FROM Qux/Bars WHERE PK = ? AND KEY = ?",
 			queryParams: []interface{}{1, 2},
 			expect: []interface{}{
 				&Qux{Id: 1, Seq: 2, Name: "List of strings 2", List: []string{"item11", "item22", "item33"}},
@@ -1453,9 +1418,9 @@ func Test_QueryContext(t *testing.T) {
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM Baz",
-				"INSERT INTO Baz$Bars(id,seq,name,time) VALUES(?,?,?,?)",
-				"INSERT INTO Baz$Bars(id,seq,name,time) VALUES(1,2,'Time formatted stored as string 2','2021-01-06T05:00:00Z')",
-				"INSERT INTO Baz$Bars(id,seq,name,time) VALUES(1,3,'Time formatted stored as string 3','2021-01-08T09:10:11Z')",
+				"INSERT INTO Baz/Bars(id,seq,name,time) VALUES(?,?,?,?)",
+				"INSERT INTO Baz/Bars(id,seq,name,time) VALUES(1,2,'Time formatted stored as string 2','2021-01-06T05:00:00Z')",
+				"INSERT INTO Baz/Bars(id,seq,name,time) VALUES(1,3,'Time formatted stored as string 3','2021-01-08T09:10:11Z')",
 			},
 			initParams: [][]interface{}{
 				{},
@@ -1463,7 +1428,7 @@ func Test_QueryContext(t *testing.T) {
 				{},
 				{},
 			},
-			querySQL:    "SELECT id, seq, name, time FROM Baz$Bars WHERE PK = ? AND KEY IN (?,?)",
+			querySQL:    "SELECT id, seq, name, time FROM Baz/Bars WHERE PK = ? AND KEY IN (?,?)",
 			queryParams: []interface{}{1, 1, 2},
 			expect: []interface{}{
 				&Baz{Id: 1, Seq: 1, Name: "Time formatted stored as string 1", Time: getTime("2021-01-06T05:04:03Z")},
@@ -1500,13 +1465,13 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 2 records by PK with 2 bin map values by key - with time value stored as int",
+			description: "get 1 records by PK with 2 bin map values by key - with time value stored as int",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM BazUnix",
-				"INSERT INTO BazUnix$Bars(id,seq,name,time) VALUES(1,1,'Time stored as int 3','2021-01-06T05:00:00Z')",
-				"INSERT INTO BazUnix$Bars(id,seq,name,time) VALUES(?,?,?,?)",
-				"INSERT INTO BazUnix$Bars(id,seq,name,time) VALUES(1,3,'Time stored as int 5','2021-02-03T04:05:06Z')",
+				"INSERT INTO BazUnix/Bars(id,seq,name,time) VALUES(1,1,'Time stored as int 3','2021-01-06T05:00:00Z')",
+				"INSERT INTO BazUnix/Bars(id,seq,name,time) VALUES(?,?,?,?)",
+				"INSERT INTO BazUnix/Bars(id,seq,name,time) VALUES(1,3,'Time stored as int 5','2021-02-03T04:05:06Z')",
 			},
 			initParams: [][]interface{}{
 				{},
@@ -1514,7 +1479,7 @@ func Test_QueryContext(t *testing.T) {
 				{1, 2, "Time stored as int 4", getTime("2021-02-03T04:05:06Z")},
 				{},
 			},
-			querySQL:    "SELECT id, seq, name, time FROM BazUnix$Bars WHERE PK = ? AND KEY IN (?,?)",
+			querySQL:    "SELECT id, seq, name, time FROM BazUnix/Bars WHERE PK = ? AND KEY IN (?,?)",
 			queryParams: []interface{}{1, 1, 2},
 			expect: []interface{}{
 				&BazUnix{Id: 1, Seq: 1, Name: "Time stored as int 3", Time: getTime("2021-01-06T05:00:00Z").In(time.Local)},
@@ -1527,7 +1492,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 2 records with all bins by PK - with time value stored as string, time ptr in type",
+			description: "get 1 record with all bins by PK - with time value stored as string, time ptr in type",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM BazPtr",
@@ -1537,13 +1502,12 @@ func Test_QueryContext(t *testing.T) {
 			initParams: [][]interface{}{
 				{},
 				{},
-				{2, 2, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
+				{2, 2, "Time formatted stored as string", "2021-01-06T05:00:00Z"},
 			},
-			querySQL:    "SELECT * FROM BazPtr WHERE PK IN (?,?)",
-			queryParams: []interface{}{1, 2},
+			querySQL:    "SELECT * FROM BazPtr WHERE PK = ?",
+			queryParams: []interface{}{1},
 			expect: []interface{}{
 				&BazPtr{Id: 1, Seq: 1, Name: "Time formatted stored as string", Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
-				&BazPtr{Id: 2, Seq: 2, Name: "Time formatted stored as string", Time: getTimePtr(getTime("2021-01-08T05:00:00Z"))},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				bazPtr := BazPtr{}
@@ -1642,193 +1606,6 @@ func Test_QueryContext(t *testing.T) {
 				return &baz, err
 			},
 		},
-		{
-			description: "get 2 records with all bins by PK - struct with no ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			init: []string{
-				"DELETE FROM bar",
-				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
-				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
-			},
-			initParams: [][]interface{}{
-				{},
-				{},
-				{2, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
-			},
-			querySQL:    "SELECT * FROM bar WHERE PK IN (?,?)",
-			queryParams: []interface{}{1, 2},
-			expect: []interface{}{
-				&Bar{Id: 1, Seq: 1, Amount: 11, Price: 1.25, Name: "Time formatted stored as string", Time: getTime("2021-01-06T05:00:00Z")},
-				&Bar{Id: 2, Seq: 2, Amount: 22, Price: 2.25, Name: "Time formatted stored as string", Time: getTime("2021-01-08T05:00:00Z")},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				bar := Bar{}
-				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
-				return &bar, err
-			},
-		},
-		{
-			description: "get 2 records with all bins by PK - struct with ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			init: []string{
-				"DELETE FROM barPtr",
-				"INSERT INTO barPtr(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
-				"INSERT INTO barPtr(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
-			},
-			initParams: [][]interface{}{
-				{},
-				{},
-				{2, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
-			},
-			querySQL:    "SELECT * FROM barPtr WHERE PK IN (?,?)",
-			queryParams: []interface{}{1, 2},
-			expect: []interface{}{
-				&BarPtr{Id: 1, Seq: 1, Amount: getIntPtr(11), Price: getFloatPtr(1.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
-				&BarPtr{Id: 2, Seq: 2, Amount: getIntPtr(22), Price: getFloatPtr(2.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-08T05:00:00Z"))},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				bar := BarPtr{}
-				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
-				return &bar, err
-			},
-		},
-		{
-			description: "get 2 records with all bins by PK - struct with double ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			init: []string{
-				"DELETE FROM barDoublePtr",
-				"INSERT INTO barDoublePtr(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
-				"INSERT INTO barDoublePtr(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
-			},
-			initParams: [][]interface{}{
-				{},
-				{},
-				{2, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
-			},
-			querySQL:    "SELECT * FROM barDoublePtr WHERE PK IN (?,?)",
-			queryParams: []interface{}{1, 2},
-			expect: []interface{}{
-				&BarDoublePtr{Id: 1, Seq: 1, Amount: getIntDoublePtr(11), Price: getFloatDoublePtr(1.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-06T05:00:00Z"))},
-				&BarDoublePtr{Id: 2, Seq: 2, Amount: getIntDoublePtr(22), Price: getFloatDoublePtr(2.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-08T05:00:00Z"))},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				bar := BarDoublePtr{}
-				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
-				return &bar, err
-			},
-		},
-		{
-			description: "get 2 records with all bins by PK with map - struct with ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			init: []string{
-				"DELETE FROM barPtr",
-				"INSERT INTO barPtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
-			},
-			initParams: [][]interface{}{
-				{},
-				{1, 1, 11, 1.25, "Time formatted stored as string", "2021-01-06T05:00:00Z", 1, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
-			},
-			querySQL:    "SELECT * FROM barPtr$Values WHERE PK IN (?) AND KEY IN (?,?)",
-			queryParams: []interface{}{1, 1, 2},
-			expect: []interface{}{
-				&BarPtr{Id: 1, Seq: 1, Amount: getIntPtr(11), Price: getFloatPtr(1.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-06T05:00:00Z"))},
-				&BarPtr{Id: 1, Seq: 2, Amount: getIntPtr(22), Price: getFloatPtr(2.25), Name: getStringPtr("Time formatted stored as string"), Time: getTimePtr(getTime("2021-01-08T05:00:00Z"))},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				bar := BarPtr{}
-				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
-				return &bar, err
-			},
-		},
-		{
-			description: "get 2 records with all bins by PK with map - struct with double ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			init: []string{
-				"DELETE FROM barDoublePtr",
-				"INSERT INTO barDoublePtr$Value(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
-				"INSERT INTO barDoublePtr$Value(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
-			},
-			initParams: [][]interface{}{
-				{},
-				{},
-				{1, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
-			},
-			querySQL:    "SELECT * FROM barDoublePtr$Value WHERE PK IN (?) AND KEY IN (?,?)",
-			queryParams: []interface{}{1, 1, 2},
-			expect: []interface{}{
-				&BarDoublePtr{Id: 1, Seq: 1, Amount: getIntDoublePtr(11), Price: getFloatDoublePtr(1.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-06T05:00:00Z"))},
-				&BarDoublePtr{Id: 1, Seq: 2, Amount: getIntDoublePtr(22), Price: getFloatDoublePtr(2.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-08T05:00:00Z"))},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				bar := BarDoublePtr{}
-				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
-				return &bar, err
-			},
-		},
-		{
-			description: "get 2 records with all bins by PK aggregation with map - struct with ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			init: []string{
-				"DELETE FROM barPtr",
-				"INSERT INTO barPtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
-			},
-			initParams: [][]interface{}{
-				{},
-				{
-					1, 1, 11, 1.25, "Time 1", "2021-01-06T05:00:00Z",
-					1, 2, 22, 2.25, "Time 2", "2021-01-08T05:00:00Z",
-				},
-			},
-			execSQL: "INSERT INTO barPtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount, price = price + new.price, name = new.name, time = new.time",
-			execParams: []interface{}{
-				1, 1, 11, 1.25, "Time 11", "2021-01-26T05:00:00Z",
-				1, 2, 22, 2.25, "Time 22", "2021-01-28T05:00:00Z",
-			},
-
-			querySQL:    "SELECT * FROM barPtr$Values WHERE PK IN (?) AND KEY IN (?,?)",
-			queryParams: []interface{}{1, 1, 2},
-			expect: []interface{}{
-				&BarPtr{Id: 1, Seq: 1, Amount: getIntPtr(22), Price: getFloatPtr(2.5), Name: getStringPtr("Time 11"), Time: getTimePtr(getTime("2021-01-26T05:00:00Z"))},
-				&BarPtr{Id: 1, Seq: 2, Amount: getIntPtr(44), Price: getFloatPtr(4.5), Name: getStringPtr("Time 22"), Time: getTimePtr(getTime("2021-01-28T05:00:00Z"))},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				bar := BarPtr{}
-				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
-				return &bar, err
-			},
-		},
-		{
-			description: "get 2 records with all bins by PK aggregation with map - struct with double ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			init: []string{
-				"DELETE FROM barDoublePtr",
-				"INSERT INTO barDoublePtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
-			},
-			initParams: [][]interface{}{
-				{},
-				{
-					1, 1, 11, 1.25, "Time 1", "2021-01-06T05:00:00Z",
-					1, 2, 22, 2.25, "Time 2", "2021-01-08T05:00:00Z",
-				},
-			},
-			execSQL: "INSERT INTO barDoublePtr$Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount, price = price + new.price, name = new.name, time = new.time",
-			execParams: []interface{}{
-				1, 1, 11, 1.25, "Time 11", "2021-01-26T05:00:00Z",
-				1, 2, 22, 2.25, "Time 22", "2021-01-28T05:00:00Z",
-			},
-
-			querySQL:    "SELECT * FROM barDoublePtr$Values WHERE PK IN (?) AND KEY IN (?,?)",
-			queryParams: []interface{}{1, 1, 2},
-			expect: []interface{}{
-				&BarDoublePtr{Id: 1, Seq: 1, Amount: getIntDoublePtr(22), Price: getFloatDoublePtr(2.5), Name: getStringDoublePtr("Time 11"), Time: getTimeDoublePtr(getTime("2021-01-26T05:00:00Z"))},
-				&BarDoublePtr{Id: 1, Seq: 2, Amount: getIntDoublePtr(44), Price: getFloatDoublePtr(4.5), Name: getStringDoublePtr("Time 22"), Time: getTimeDoublePtr(getTime("2021-01-28T05:00:00Z"))},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				bar := BarDoublePtr{}
-				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
-				return &bar, err
-			},
-		},
 	}
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {
@@ -1836,19 +1613,18 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	//testCases = testCases[0:1]
+	//	testCases = testCases[0:1] //TODO DELETE
 
 	testCases.runTest(t)
 }
 
-func (s tstCases) runTest(t *testing.T) {
+func (s testCases) runTest(t *testing.T) {
 	ctx := context.Background()
-	wg := sync.WaitGroup{}
 	for _, tc := range s {
-		wg.Add(1)
+
 		fmt.Printf("running test: %v\n", tc.description)
 		t.Run(tc.description, func(t *testing.T) {
-			defer wg.Done()
+
 			if tc.truncateNamespaces {
 				err := truncateNamespace(tc.dsn)
 				if !assert.Nil(t, err, tc.description) {
@@ -1916,7 +1692,6 @@ func (s tstCases) runTest(t *testing.T) {
 
 			assert.Equal(t, tc.expect, actual, tc.description)
 		})
-		wg.Wait()
 	}
 }
 
@@ -1940,33 +1715,6 @@ func getTime(formattedTime string) time.Time {
 		result = time.Time{}
 	}
 	return result
-}
-
-func getStringPtr(s string) *string {
-	return &s
-}
-
-func getStringDoublePtr(s string) **string {
-	ptr := &s
-	return &ptr
-}
-
-func getIntPtr(i int) *int {
-	return &i
-}
-
-func getIntDoublePtr(i int) **int {
-	ptr := &i
-	return &ptr
-}
-
-func getFloatPtr(f float64) *float64 {
-	return &f
-}
-
-func getFloatDoublePtr(f float64) **float64 {
-	ptr := &f
-	return &ptr
 }
 
 func getTimePtr(t time.Time) *time.Time {
