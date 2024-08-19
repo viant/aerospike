@@ -131,6 +131,11 @@ func (s *Statement) handleTableInfo(ctx context.Context, keys []*as.Key, rows *R
 			if aTag.Name == "" {
 				aTag.Name = aField.Name
 			}
+
+			fType := aField.Type
+			if fType.Kind() == reflect.Ptr {
+				fType = fType.Elem()
+			}
 			rec := &as.Record{
 				Bins: as.BinMap{
 					"table_schema":             s.cfg.namespace,
@@ -138,7 +143,7 @@ func (s *Statement) handleTableInfo(ctx context.Context, keys []*as.Key, rows *R
 					"column_name":              aTag.Name,
 					"ordinal_position":         i,
 					"column_comment":           "",
-					"data_type":                aField.Type.String(),
+					"data_type":                fType.String(),
 					"character_maximum_length": 0,
 					"numeric_precision":        0,
 					"numeric_scale":            0,
