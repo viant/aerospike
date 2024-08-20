@@ -31,6 +31,7 @@ type (
 		scanner            func(r *sql.Rows) (interface{}, error)
 		sleepSec           int
 		justNActualRows    int
+		allowExecError     bool
 	}
 
 	tstCases           []*testCase
@@ -1825,6 +1826,77 @@ func Test_QueryContext(t *testing.T) {
 				return &bar, err
 			},
 		},
+		{
+			description: "aggregate with duplicated pk and key in one batch",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"TRUNCATE TABLE bar",
+			},
+			execSQL: "INSERT INTO bar/Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?),(?,?,?,?,?,?),(?,?,?,?,?,?),(?,?,?,?,?,?),(?,?,?,?,?,?),(?,?,?,?,?,?),(?,?,?,?,?,?),(?,?,?,?,?,?),(?,?,?,?,?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount, price = price + new.price, name = new.name, time = new.time",
+			execParams: []interface{}{
+				1, 1, 11, 1.25, "Time A", "2001-01-01T01:01:01Z",
+				1, 2, 22, 2.50, "Time A", "2001-01-01T01:01:01Z",
+				1, 1, 11, 1.25, "Time B", "2002-02-02T02:02:02Z",
+				1, 2, 22, 2.50, "Time B", "2002-02-02T02:02:02Z",
+				1, 3, 33, 3.50, "Time C", "2003-03-03T03:03:03Z",
+
+				2, 1, 11, 1.25, "Time A", "2001-01-01T01:01:01Z",
+				2, 2, 22, 2.50, "Time A", "2001-01-01T01:01:01Z",
+				2, 1, 11, 1.25, "Time B", "2002-02-02T02:02:02Z",
+				2, 2, 22, 2.50, "Time B", "2002-02-02T02:02:02Z",
+				2, 3, 33, 3.50, "Time C", "2003-03-03T03:03:03Z",
+			},
+			querySQL:    "SELECT * FROM bar/Values WHERE PK IN (?,?) AND KEY IN (?,?,?)",
+			queryParams: []interface{}{1, 2, 1, 2, 3},
+			expect: []interface{}{
+				&Bar{Id: 1, Seq: 1, Amount: 22, Price: 2.5, Name: "Time B", Time: getTime("2002-02-02T02:02:02Z")},
+				&Bar{Id: 1, Seq: 2, Amount: 44, Price: 5.0, Name: "Time B", Time: getTime("2002-02-02T02:02:02Z")},
+				&Bar{Id: 1, Seq: 3, Amount: 33, Price: 3.5, Name: "Time C", Time: getTime("2003-03-03T03:03:03Z")},
+				&Bar{Id: 2, Seq: 1, Amount: 22, Price: 2.5, Name: "Time B", Time: getTime("2002-02-02T02:02:02Z")},
+				&Bar{Id: 2, Seq: 2, Amount: 44, Price: 5.0, Name: "Time B", Time: getTime("2002-02-02T02:02:02Z")},
+				&Bar{Id: 2, Seq: 3, Amount: 33, Price: 3.5, Name: "Time C", Time: getTime("2003-03-03T03:03:03Z")},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := Bar{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
+		{
+			description: "avoid to insert float value as int",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM bar",
+			},
+			execSQL: "INSERT INTO bar/Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
+			execParams: []interface{}{
+				1, 1, 123.45, 1.2, "Time 11", "2021-01-06T05:00:00Z",
+			},
+			allowExecError: true,
+		},
+		{
+			description: "aggregate with with int to float param conversion",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM bar",
+			},
+			execSQL: "INSERT INTO bar/Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount, price = price + new.price, name = new.name, time = new.time",
+			execParams: []interface{}{
+				1, 1, 11, 1, "Time 11", "2021-01-06T05:00:00Z",
+				1, 1, 11, 1.25, "Time 11", "2021-01-26T05:00:00Z",
+			},
+
+			querySQL:    "SELECT * FROM bar/Values WHERE PK IN (?) AND KEY IN (?)",
+			queryParams: []interface{}{1, 1},
+			expect: []interface{}{
+				&Bar{Id: 1, Seq: 1, Amount: 22, Price: 2.25, Name: "Time 11", Time: getTime("2021-01-26T05:00:00Z")},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				bar := Bar{}
+				err := r.Scan(&bar.Id, &bar.Seq, &bar.Amount, &bar.Price, &bar.Name, &bar.Time)
+				return &bar, err
+			},
+		},
 	}
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {
@@ -1876,6 +1948,9 @@ func (s tstCases) runTest(t *testing.T) {
 			}
 			if tc.execSQL != "" {
 				_, err = db.ExecContext(context.Background(), tc.execSQL, tc.execParams...)
+				if tc.allowExecError && err != nil {
+					return
+				}
 				if !assert.Nil(t, err, tc.description) {
 					fmt.Println("execSQL ERROR: ", err.Error())
 					return

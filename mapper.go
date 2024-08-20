@@ -30,15 +30,16 @@ type (
 	}
 
 	mapper struct {
-		fields          []field
-		pk              []*field
-		key             []*field
-		index           *field
-		listKey         bool
-		mapKey          bool
-		byName          map[string]int
-		pseudoColumns   map[string]interface{}
-		aggregateColumn map[string]*expr.Call
+		fields           []field
+		pk               []*field
+		key              []*field
+		index            *field
+		listKey          bool
+		mapKey           bool
+		byName           map[string]int
+		pseudoColumns    map[string]interface{}
+		aggregateColumn  map[string]*expr.Call
+		columnZeroValues map[string]interface{}
 	}
 )
 
@@ -98,6 +99,31 @@ func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 			value, err = extractValue(value)
 			if err != nil {
 				return nil, fmt.Errorf("unable to ensure valid value type due to: %w", err)
+			}
+		}
+
+		basicType := baseType(f.Type)
+		valueType = reflect.TypeOf(value)
+		if basicType.Kind() != valueType.Kind() {
+			b := basicType.Kind()
+
+			switch t := valueType.Kind(); t {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				switch b {
+				case reflect.Float32:
+					value = float32(value.(int))
+				case reflect.Float64:
+					value = float64(value.(int))
+				}
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				switch b {
+				case reflect.Float32:
+					value = float32(value.(uint))
+				case reflect.Float64:
+					value = float64(value.(uint))
+				}
+			case reflect.Float32, reflect.Float64:
+				return nil, fmt.Errorf("unable to ensure valid type: can't convert value %v (%v) to type %v", value, t, b)
 			}
 		}
 	}
@@ -375,5 +401,41 @@ func newTypeBasedMapper(recordType reflect.Type) (*mapper, error) {
 		typeMapper.pk = append(typeMapper.pk, &typeMapper.fields[*idIndex])
 		typeMapper.pk[0].tag.IsPK = true
 	}
+
+	typeMapper.columnZeroValues = make(map[string]interface{})
+
 	return typeMapper, nil
+}
+
+func baseType(rType reflect.Type) reflect.Type {
+	switch rType.Kind() {
+	case reflect.Ptr, reflect.Array, reflect.Chan, reflect.Map, reflect.Slice:
+		return baseType(rType.Elem())
+	default:
+		return rType
+	}
+}
+
+func (m *mapper) columnZeroValue(name string) interface{} {
+	if value, ok := m.columnZeroValues[name]; ok == true {
+		return value
+	}
+
+	var zeroValue interface{}
+	xfield := m.lookup(name)
+
+	t := baseType(xfield.Type)
+	switch t.Kind() {
+	case reflect.Float32, reflect.Float64:
+		zeroValue = 0.0
+	case reflect.String:
+		zeroValue = ""
+	case reflect.Bool:
+		zeroValue = false
+	default:
+		zeroValue = 0
+	}
+
+	m.columnZeroValues[name] = zeroValue
+	return zeroValue
 }

@@ -20,7 +20,7 @@ func (s *Statement) prepareInsert(sql string) error {
 
 func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 	batchCount := len(s.insert.Values) / len(s.insert.Columns)
-	var groups = make(map[interface{}]map[interface{}]map[interface{}]interface{})
+	var groups = make(map[interface{}][]map[interface{}]map[interface{}]interface{})
 	argIndex := 0
 
 	for b := 0; b < batchCount; b++ {
@@ -31,7 +31,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 		keyValue := s.getKey(s.mapper.pk, bins)
 		group, ok := groups[keyValue]
 		if !ok {
-			group = make(map[interface{}]map[interface{}]interface{})
+			group = make([]map[interface{}]map[interface{}]interface{}, 0)
 			groups[keyValue] = group
 		}
 		mapKey := s.getKey(s.mapper.key, bins)
@@ -39,7 +39,20 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 		for k, v := range bins {
 			values[k] = v
 		}
-		groups[keyValue][mapKey] = values
+
+		assigned := false
+		for _, records := range groups[keyValue] {
+			if _, ok := records[mapKey]; !ok {
+				records[mapKey] = values
+				assigned = true
+				break
+			}
+		}
+
+		if !assigned {
+			groups[keyValue] = append(group, map[interface{}]map[interface{}]interface{}{mapKey: values})
+		}
+
 	}
 
 	isMerge := len(s.insert.OnDuplicateKeyUpdate) > 0
@@ -52,29 +65,30 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 		return err
 	}
 
-	for keyValue, group := range groups {
-		key, err := as.NewKey(s.namespace, s.set, keyValue)
-		if err != nil {
-			return err
+	for keyValue, groupSet := range groups {
+		for _, group := range groupSet {
+			key, err := as.NewKey(s.namespace, s.set, keyValue)
+			if err != nil {
+				return err
+			}
+			writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
+			writePolicy.SendKey = true
+			var ops []*as.Operation
+			var values = make(map[interface{}]interface{}, len(group))
+			for k, v := range group {
+				values[k] = v
+			}
+			mapPolicy := as.DefaultMapPolicy()
+			ops = append(ops, as.MapPutItemsOp(mapPolicy, s.mapBin, values))
+			if _, err = s.client.Operate(writePolicy, key, ops...); err != nil {
+				return err
+			}
 		}
-		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
-		writePolicy.SendKey = true
-		var ops []*as.Operation
-		var values = make(map[interface{}]interface{}, len(group))
-		for k, v := range group {
-			values[k] = v
-		}
-		mapPolicy := as.DefaultMapPolicy()
-		ops = append(ops, as.MapPutItemsOp(mapPolicy, s.mapBin, values))
-		if _, err = s.client.Operate(writePolicy, key, ops...); err != nil {
-			return err
-		}
-
 	}
 	return nil
 }
 
-func (s *Statement) handleMapMerge(groups map[interface{}]map[interface{}]map[interface{}]interface{}) error {
+func (s *Statement) handleMapMerge(groups map[interface{}][]map[interface{}]map[interface{}]interface{}) error {
 	addColumn, subColumn, err := s.identifyAddSubColumn()
 	if err != nil {
 		return err
@@ -82,64 +96,70 @@ func (s *Statement) handleMapMerge(groups map[interface{}]map[interface{}]map[in
 	wg := sync.WaitGroup{}
 	var rateLimiter = make(chan bool, min(s.cfg.concurrency, len(groups)))
 	for recKey := range groups {
-		group := groups[recKey]
+		groupSet := groups[recKey]
 		rateLimiter <- true
 		wg.Add(1)
 		key := recKey
-		go func(recKey interface{}, group map[interface{}]map[interface{}]interface{}) {
+		go func(recKey interface{}, groupSet []map[interface{}]map[interface{}]interface{}) {
 			defer func() {
 				wg.Done()
 				<-rateLimiter
 			}()
-			if e := s.mergeMaps(recKey, group, addColumn, subColumn); e != nil {
+			if e := s.mergeMaps(recKey, groupSet, addColumn, subColumn); e != nil {
 				err = e
 			}
-		}(key, group)
+		}(key, groupSet)
 	}
 	wg.Wait()
 	return err
 }
 
-func (s *Statement) mergeMaps(recKey interface{}, group map[interface{}]map[interface{}]interface{}, addColumn map[string]bool, subColumn map[string]bool) error {
+func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map[interface{}]interface{}, addColumn map[string]bool, subColumn map[string]bool) error {
 	var err error
 	key, err := as.NewKey(s.namespace, s.set, recKey)
 	if err != nil {
 		return err
 	}
-	var op []*as.Operation
-	var createOp []*as.Operation
-	for groupKey, bins := range group {
-		mapKey := as.CtxMapKey(as.NewValue(groupKey))
-		mapPolicy := as.DefaultMapPolicy()
-		createOnly := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.CREATE_ONLY)
-		createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, groupKey, map[interface{}]interface{}{}))
-		for col, value := range bins {
-			column := col.(string)
-			columnValue := as.NewStringValue(column)
-			if addColumn[column] {
-				createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, columnValue, 0, mapKey))
-				op = append(op, as.MapIncrementOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
-			} else if subColumn[column] {
-				createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, columnValue, 0, mapKey))
-				op = append(op, as.MapDecrementOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
-			} else {
-				op = append(op, as.MapPutOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
+
+	for _, group := range groupSet {
+		var op []*as.Operation
+		var createOp []*as.Operation
+
+		for groupKey, bins := range group {
+			mapKey := as.CtxMapKey(as.NewValue(groupKey))
+			mapPolicy := as.DefaultMapPolicy()
+			createOnly := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.CREATE_ONLY)
+			createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, groupKey, map[interface{}]interface{}{}))
+			for col, value := range bins {
+				column := col.(string)
+				columnValue := as.NewStringValue(column)
+
+				if addColumn[column] {
+					createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, columnValue, s.mapper.columnZeroValue(column), mapKey))
+					op = append(op, as.MapIncrementOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
+				} else if subColumn[column] {
+					createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, columnValue, s.mapper.columnZeroValue(column), mapKey))
+					op = append(op, as.MapDecrementOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
+				} else {
+					op = append(op, as.MapPutOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
+				}
 			}
+		}
+
+		aSet, err := s.lookupSet()
+		if err != nil {
+			return err
+		}
+
+		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
+		writePolicy.SendKey = true
+
+		_, _ = s.client.Operate(writePolicy, key, createOp...)
+		if _, err := s.client.Operate(writePolicy, key, op...); err != nil {
+			return err
 		}
 	}
 
-	aSet, err := s.lookupSet()
-	if err != nil {
-		return err
-	}
-
-	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
-	writePolicy.SendKey = true
-
-	_, _ = s.client.Operate(writePolicy, key, createOp...)
-	if _, err := s.client.Operate(writePolicy, key, op...); err != nil {
-		return err
-	}
 	return nil
 }
 
