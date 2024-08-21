@@ -47,6 +47,7 @@ type Statement struct {
 	numInput       int
 	set            string
 	source         string
+	componentKey   string
 	mapBin         string
 	listBin        string
 	namespace      string
@@ -393,7 +394,7 @@ func (s *Statement) setTypeBasedMapper() error {
 		s.mapper = aSet.typeBasedMapper
 	}
 
-	if s.mapper.listKey {
+	if s.mapper.listKey && !s.mapper.mapKey {
 		s.listBin = s.mapBin
 		s.mapBin = ""
 	}

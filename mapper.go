@@ -34,6 +34,8 @@ type (
 		pk               []*field
 		key              []*field
 		index            *field
+		component        *field
+		componentSize    int
 		listKey          bool
 		mapKey           bool
 		byName           map[string]int
@@ -230,17 +232,22 @@ func (m *mapper) addField(aField reflect.StructField, tag *Tag) *field {
 	idx := len(m.fields)
 	m.fields = append(m.fields, field{index: idx, Field: xunsafe.NewField(aField), tag: tag})
 	mapperField := &m.fields[idx]
-	if tag.IsMapKey || tag.IsListKey {
+	if tag.IsMapKey {
 		m.key = append(m.key, mapperField)
-		if tag.IsMapKey {
-			m.mapKey = true
-		}
-		if tag.IsListKey {
-			m.listKey = true
-		}
+		m.mapKey = true
+
 	}
-	if tag.IsIndex {
+
+	if tag.IsListKey {
+		m.listKey = true
 		m.index = mapperField
+	}
+
+	if tag.IsComponent {
+		m.component = mapperField
+	}
+	if tag.ArraySize > 0 {
+		m.componentSize = tag.ArraySize
 	}
 
 	fuzzName := strings.ReplaceAll(strings.ToLower(tag.Name), "_", "")

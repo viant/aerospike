@@ -6,6 +6,7 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
+	"reflect"
 	"sync"
 )
 
@@ -73,17 +74,68 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 			}
 			writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 			writePolicy.SendKey = true
+
 			var ops []*as.Operation
-			var values = make(map[interface{}]interface{}, len(group))
-			for k, v := range group {
-				values[k] = v
-			}
 			mapPolicy := as.DefaultMapPolicy()
-			ops = append(ops, as.MapPutItemsOp(mapPolicy, s.mapBin, values))
+			var values = make(map[interface{}]interface{}, len(group))
+			if s.mapper.component != nil {
+				if s.mapper.component != nil {
+					if err := s.ensureMapOfSlice(group, key); err != nil {
+						return err
+					}
+				}
+				for k, v := range group {
+					indexLiteral, ok := v[s.mapper.index.Column()]
+					if !ok {
+						return fmt.Errorf("unable to find list index")
+					}
+					idx, ok := indexLiteral.(int)
+					if !ok {
+						return fmt.Errorf("invalid list index: %v", indexLiteral)
+					}
+					componentValue, ok := v[s.mapper.component.Column()]
+					//as.ListIncrementOp(as.ListOpBin(binName, mapKey), index, as.NewValue(incrementBy)), // Increment the value at the specified index
+					listPolicy := as.NewListPolicy(as.ListOrderUnordered, as.ListWriteFlagsDefault)
+					ops = append(ops, as.ListInsertWithPolicyContextOp(listPolicy, s.mapBin, idx, []*as.CDTContext{as.CtxMapKey(as.NewValue(k))}, as.NewValue(componentValue)))
+				}
+
+				if _, err = s.client.Operate(nil, key, ops...); err != nil {
+					return err
+				}
+				continue
+			} else {
+
+				for k, v := range group {
+					values[k] = v
+				}
+				ops = append(ops, as.MapPutItemsOp(mapPolicy, s.mapBin, values))
+			}
 			if _, err = s.client.Operate(writePolicy, key, ops...); err != nil {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]interface{}, key *as.Key) error {
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return err
+	}
+	newEntryPolicy := as.NewMapPolicyWithFlags(as.MapOrder.UNORDERED, as.MapWriteFlagsCreateOnly|as.MapWriteFlagsNoFail)
+	var ops []*as.Operation
+
+	var values = map[interface{}]interface{}{}
+	for mapKey, _ := range group {
+		sliceType := reflect.SliceOf(s.mapper.component.Type)
+		slice := reflect.MakeSlice(sliceType, s.mapper.componentSize, s.mapper.componentSize)
+		values[mapKey] = slice.Interface()
+	}
+	ops = append(ops, as.MapPutItemsOp(newEntryPolicy, s.mapBin, values))
+	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
+	if _, err := s.client.Operate(writePolicy, key, ops...); err != nil {
+		return err
 	}
 	return nil
 }
@@ -260,6 +312,7 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	}
 
 	s.affected = int64(batchCount)
+
 	//if batchCount > 1 { //TODO check impact on regular insert
 	if s.mapBin != "" {
 		if len(s.mapper.key) == 0 {

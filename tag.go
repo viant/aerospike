@@ -8,13 +8,14 @@ import (
 )
 
 type Tag struct {
-	Name      string
-	IsPK      bool
-	IsIndex   bool
-	IsMapKey  bool
-	IsListKey bool
-	Ignore    bool
-	UnixSec   bool
+	Name        string
+	IsPK        bool
+	IsMapKey    bool
+	IsListKey   bool
+	Ignore      bool
+	UnixSec     bool
+	ArraySize   int
+	IsComponent bool
 }
 
 func (t *Tag) updateTagKey(key, value string) error {
@@ -24,19 +25,18 @@ func (t *Tag) updateTagKey(key, value string) error {
 		t.Ignore = true
 	case "name":
 		t.Name = value
+	case "array":
+		if t.ArraySize, err = strconv.Atoi(strings.TrimSpace(value)); err != nil {
+			return err
+		}
+	case "component":
+		t.IsComponent = true
+
 	case "pk":
 		if value == "" {
 			t.IsPK = true
 		} else {
 			if t.IsPK, err = strconv.ParseBool(value); err != nil {
-				return err
-			}
-		}
-	case "index":
-		if value == "" {
-			t.IsIndex = true
-		} else {
-			if t.IsIndex, err = strconv.ParseBool(value); err != nil {
 				return err
 			}
 		}

@@ -583,7 +583,15 @@ func Test_QueryContext(t *testing.T) {
 		Time   **time.Time `aerospike:"time"`
 	}
 
+	type Signal struct {
+		ID     string      `aerospike:"id,pk=true"` //--> day,value
+		Value  interface{} `aerospike:"value,key"`
+		Bucket int         `aerospike:"bucket,listKey,array=10"`
+		Count  int         `aerospike:"count,component"`
+	}
+
 	var sets = []*parameterizedQuery{
+		{SQL: "REGISTER SET Signal AS ?", params: []interface{}{Signal{}}},
 		{SQL: "REGISTER SET Agg/Values AS ?", params: []interface{}{Agg{}}},
 		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,key=true\"`;  Name string}"},
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
@@ -608,6 +616,36 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = tstCases{
+
+		{
+			description: "array ",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id,value,bucket,count FROM Siginal WHERE id = ?",
+			queryParams: []interface{}{"1"},
+			init: []string{
+				"TRUNCATE TABLE Signal ",
+			},
+			execSQL:    "INSERT INTO Signal/Values(id,value,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?)",
+			execParams: []interface{}{"1", "v1", 1, 10, "1", "v1", 2, 11, "1", "v2", 3, 12},
+			expect: []interface{}{
+				&Signal{ID: "1", Value: "v1", Bucket: 1, Count: 10},
+				&Signal{ID: "1", Value: "v1", Bucket: 2, Count: 11},
+				&Signal{ID: "1", Value: "v2", Bucket: 3, Count: 12},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := Signal{}
+				err := r.Scan(&agg.ID, &agg.Value, &agg.Bucket, &agg.Count)
+				return &agg, err
+			},
+		},
+
+		/*
+
+			id,pk=true"` //--> day,value
+				Value  interface{} `aerospike:"value,key"`
+				Bucket int         `aerospike:"bucket,sliceKey=true,array=288"`
+				Count  int         `aerospike:"count
+		*/
 		{
 			description: "secondary index ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -629,6 +667,7 @@ func Test_QueryContext(t *testing.T) {
 				return &agg, err
 			},
 		},
+
 		{
 			description: "get 1 record with all bins by PK with string list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -1898,6 +1937,10 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 	}
+
+	//testCases = testCases[:1]
+	testCases = testCases[:1]
+
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {
 			tc.sets = sets
