@@ -64,6 +64,9 @@ func (r *Rows) Next(dest []driver.Value) error {
 
 func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr unsafe.Pointer) error {
 	for i, aField := range r.mapper.fields {
+		if aField.tag.Ignore {
+			continue
+		}
 		if aField.isPseudo {
 			dest[i] = r.mapper.pseudoColumns[aField.Name]
 			continue
@@ -81,10 +84,16 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 			continue
 		}
 		srcType := reflect.TypeOf(value)
-		if srcType.AssignableTo(aField.Type) {
+		if srcType == aField.Type {
 			aField.Set(ptr, value)
+		} else if srcType.AssignableTo(aField.Type) {
+			aField.SetValue(ptr, value)
+		} else if srcType.ConvertibleTo(aField.Type) {
+			aField.SetValue(ptr, reflect.ValueOf(value).Convert(aField.Type).Interface())
+		} else if srcType.Kind() == reflect.Ptr && srcType.Elem().Kind() == aField.Kind() {
+			aField.SetValue(ptr, reflect.ValueOf(value).Elem().Convert(aField.Type).Interface())
 		} else if srcType.Kind() == aField.Kind() && (srcType.Kind() != reflect.Ptr && srcType.Kind() != reflect.Struct && srcType.Kind() != reflect.Slice) {
-			aField.Set(ptr, reflect.ValueOf(value).Convert(aField.Type).Interface())
+			aField.SetValue(ptr, reflect.ValueOf(value).Convert(aField.Type).Interface())
 		} else {
 			if aField.setter == nil {
 				aField.setter = structology.LookupSetter(srcType, aField.Type)

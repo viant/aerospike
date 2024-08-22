@@ -8,14 +8,15 @@ import (
 )
 
 type Tag struct {
-	Name        string
-	IsPK        bool
-	IsMapKey    bool
-	IsListKey   bool
-	Ignore      bool
-	UnixSec     bool
-	ArraySize   int
-	IsComponent bool
+	Name             string
+	IsPK             bool
+	IsMapKey         bool
+	IsSecondaryIndex bool
+	IsArrayIndex     bool
+	Ignore           bool
+	UnixSec          bool
+	ArraySize        int
+	IsComponent      bool
 }
 
 func (t *Tag) updateTagKey(key, value string) error {
@@ -25,10 +26,17 @@ func (t *Tag) updateTagKey(key, value string) error {
 		t.Ignore = true
 	case "name":
 		t.Name = value
-	case "array":
+	case "arraysize":
 		if t.ArraySize, err = strconv.Atoi(strings.TrimSpace(value)); err != nil {
 			return err
 		}
+	case "arrayindex":
+		if value == "" {
+			t.IsArrayIndex = true
+		} else if t.IsArrayIndex, err = strconv.ParseBool(value); err != nil {
+			return err
+		}
+
 	case "component":
 		t.IsComponent = true
 
@@ -40,13 +48,15 @@ func (t *Tag) updateTagKey(key, value string) error {
 				return err
 			}
 		}
-	case "listkey":
+	case "secondaryindex":
 		if value == "" {
-			t.IsListKey = true
-		} else if t.IsListKey, err = strconv.ParseBool(value); err != nil {
-			return err
+			t.IsSecondaryIndex = true
+		} else {
+			if t.IsSecondaryIndex, err = strconv.ParseBool(value); err != nil {
+				return err
+			}
 		}
-	case "key":
+	case "mapkey":
 		if value == "" {
 			t.IsMapKey = true
 		} else if t.IsMapKey, err = strconv.ParseBool(value); err != nil {

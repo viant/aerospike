@@ -89,22 +89,22 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 		return err
 	}
 
-	if s.mapBin != "" {
-		if len(s.keyValues) != 1 {
-			return fmt.Errorf("update statement map must have one map key")
+	if s.collectionType.IsMap() {
+		if len(s.mapKeyValues) != 1 {
+			return fmt.Errorf("update statement map must have one map mapKey")
 		}
 		mapPolicy := as.NewMapPolicy(as.MapOrder.KEY_ORDERED, as.MapWriteMode.UPDATE)
-		binKey := as.CtxMapKey(as.NewValue(s.keyValues[0]))
+		binKey := as.CtxMapKey(as.NewValue(s.mapKeyValues[0]))
 		for key, value := range addBins {
-			operates = append(operates, as.MapIncrementOp(mapPolicy, s.mapBin, key, value, binKey))
+			operates = append(operates, as.MapIncrementOp(mapPolicy, s.collectionBin, key, value, binKey))
 		}
 		for key, value := range subBins {
-			operates = append(operates, as.MapDecrementOp(mapPolicy, s.mapBin, key, value, binKey))
+			operates = append(operates, as.MapDecrementOp(mapPolicy, s.collectionBin, key, value, binKey))
 		}
 		for key, value := range putBins {
-			operates = append(operates, as.MapPutOp(mapPolicy, s.mapBin, key, value, binKey))
+			operates = append(operates, as.MapPutOp(mapPolicy, s.collectionBin, key, value, binKey))
 		}
-	} else {
+	} else if s.collectionType.IsArray() {
 		for key, value := range addBins {
 			operates = append(operates, as.AddOp(as.NewBin(key, value)))
 		}

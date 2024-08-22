@@ -32,12 +32,11 @@ type (
 	mapper struct {
 		fields           []field
 		pk               []*field
-		key              []*field
-		index            *field
+		mapKey           []*field
+		arrayIndex       *field
+		secondaryIndex   *field
 		component        *field
-		componentSize    int
-		listKey          bool
-		mapKey           bool
+		arraySize        int
 		byName           map[string]int
 		pseudoColumns    map[string]interface{}
 		aggregateColumn  map[string]*expr.Call
@@ -233,21 +232,21 @@ func (m *mapper) addField(aField reflect.StructField, tag *Tag) *field {
 	m.fields = append(m.fields, field{index: idx, Field: xunsafe.NewField(aField), tag: tag})
 	mapperField := &m.fields[idx]
 	if tag.IsMapKey {
-		m.key = append(m.key, mapperField)
-		m.mapKey = true
-
+		m.mapKey = append(m.mapKey, mapperField)
+	}
+	if tag.IsArrayIndex {
+		m.arrayIndex = mapperField
 	}
 
-	if tag.IsListKey {
-		m.listKey = true
-		m.index = mapperField
+	if tag.IsSecondaryIndex {
+		m.secondaryIndex = mapperField
 	}
 
 	if tag.IsComponent {
 		m.component = mapperField
 	}
 	if tag.ArraySize > 0 {
-		m.componentSize = tag.ArraySize
+		m.arraySize = tag.ArraySize
 	}
 
 	fuzzName := strings.ReplaceAll(strings.ToLower(tag.Name), "_", "")
@@ -266,7 +265,10 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 	ret := &mapper{
 		fields:          make([]field, 0),
 		byName:          make(map[string]int),
-		listKey:         typeMapper.listKey,
+		arrayIndex:      typeMapper.arrayIndex,
+		arraySize:       typeMapper.arraySize,
+		secondaryIndex:  typeMapper.secondaryIndex,
+		component:       typeMapper.component,
 		mapKey:          typeMapper.mapKey,
 		pk:              typeMapper.pk,
 		pseudoColumns:   make(map[string]interface{}),
@@ -445,4 +447,10 @@ func (m *mapper) columnZeroValue(name string) interface{} {
 
 	m.columnZeroValues[name] = zeroValue
 	return zeroValue
+}
+
+func (m *mapper) newSlice() any {
+	sliceType := reflect.SliceOf(m.component.Type)
+	slice := reflect.MakeSlice(sliceType, m.arraySize, m.arraySize)
+	return slice.Interface()
 }

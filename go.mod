@@ -7,7 +7,7 @@ toolchain go1.21.11
 require (
 	github.com/aerospike/aerospike-client-go/v6 v6.15.1
 	github.com/stretchr/testify v1.9.0
-	github.com/viant/sqlparser v0.7.2
+	github.com/viant/sqlparser v0.7.4
 	github.com/viant/structology v0.5.6-0.20240802174922-5eb157550455
 	github.com/viant/tagly v0.2.0
 	github.com/viant/toolbox v0.34.6-0.20221112031702-3e7cdde7f888

@@ -53,10 +53,10 @@ func (s *Statement) handleCreateIndex(args []driver.NamedValue) (driver.Result, 
 		indexType = as.GEO2DSPHERE
 	}
 	if len(s.createIndex.Columns) != 1 {
-		return nil, fmt.Errorf("unsupported index columns: %v", s.createIndex.Columns)
+		return nil, fmt.Errorf("unsupported secondaryIndex columns: %v", s.createIndex.Columns)
 	}
 	if indexType == "" {
-		return nil, fmt.Errorf("unsupported index type: %v", s.createIndex.Type)
+		return nil, fmt.Errorf("unsupported secondaryIndex type: %v", s.createIndex.Type)
 	}
 	writePolicy := as.NewWritePolicy(0, 0)
 

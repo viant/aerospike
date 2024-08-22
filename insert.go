@@ -6,7 +6,6 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
-	"reflect"
 	"sync"
 )
 
@@ -35,7 +34,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 			group = make([]map[interface{}]map[interface{}]interface{}, 0)
 			groups[keyValue] = group
 		}
-		mapKey := s.getKey(s.mapper.key, bins)
+		mapKey := s.getKey(s.mapper.mapKey, bins)
 		values := make(map[interface{}]interface{}, len(bins))
 		for k, v := range bins {
 			values[k] = v
@@ -83,18 +82,17 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 					return err
 				}
 				for k, v := range group {
-					indexLiteral, ok := v[s.mapper.index.Column()]
+					indexLiteral, ok := v[s.mapper.arrayIndex.Column()]
 					if !ok {
-						return fmt.Errorf("unable to find list index")
+						return fmt.Errorf("unable to find list secondaryIndex")
 					}
 					idx, ok := indexLiteral.(int)
 					if !ok {
-						return fmt.Errorf("invalid list index: %v", indexLiteral)
+						return fmt.Errorf("invalid list secondaryIndex: %v", indexLiteral)
 					}
 					componentValue, ok := v[s.mapper.component.Column()]
-					//as.ListIncrementOp(as.ListOpBin(binName, mapKey), index, as.NewValue(incrementBy)), // Increment the value at the specified index
-					listPolicy := as.NewListPolicy(as.ListOrderUnordered, as.ListWriteFlagsDefault)
-					ops = append(ops, as.ListInsertWithPolicyContextOp(listPolicy, s.mapBin, idx, []*as.CDTContext{as.CtxMapKey(as.NewValue(k))}, as.NewValue(componentValue)))
+					key := as.CtxMapKey(as.NewValue(k))
+					ops = append(ops, as.ListSetOp(s.collectionBin, idx, as.NewValue(componentValue), key))
 				}
 
 				if _, err = s.client.Operate(nil, key, ops...); err != nil {
@@ -106,7 +104,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 				for k, v := range group {
 					values[k] = v
 				}
-				ops = append(ops, as.MapPutItemsOp(mapPolicy, s.mapBin, values))
+				ops = append(ops, as.MapPutItemsOp(mapPolicy, s.collectionBin, values))
 			}
 			if _, err = s.client.Operate(writePolicy, key, ops...); err != nil {
 				return err
@@ -126,11 +124,9 @@ func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]inter
 
 	var values = map[interface{}]interface{}{}
 	for mapKey, _ := range group {
-		sliceType := reflect.SliceOf(s.mapper.component.Type)
-		slice := reflect.MakeSlice(sliceType, s.mapper.componentSize, s.mapper.componentSize)
-		values[mapKey] = slice.Interface()
+		values[mapKey] = s.mapper.newSlice()
 	}
-	ops = append(ops, as.MapPutItemsOp(newEntryPolicy, s.mapBin, values))
+	ops = append(ops, as.MapPutItemsOp(newEntryPolicy, s.collectionBin, values))
 	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 	writePolicy.SendKey = true
 	if _, err := s.client.Operate(writePolicy, key, ops...); err != nil {
@@ -172,28 +168,68 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 		return err
 	}
 
+	var slice interface{}
+	if s.mapper.component != nil {
+		slice = s.mapper.newSlice()
+	}
 	for _, group := range groupSet {
-		var op []*as.Operation
+		var ops []*as.Operation
 		var createOp []*as.Operation
 
 		for groupKey, bins := range group {
 			mapKey := as.CtxMapKey(as.NewValue(groupKey))
 			mapPolicy := as.DefaultMapPolicy()
 			createOnly := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.CREATE_ONLY)
-			createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, groupKey, map[interface{}]interface{}{}))
-			for col, value := range bins {
-				column := col.(string)
-				columnValue := as.NewStringValue(column)
+			if s.mapper.component != nil {
+				createOp = append(createOp, as.MapPutOp(createOnly, s.collectionBin, groupKey, map[interface{}]interface{}{
+					s.mapper.component.Column(): slice,
+				}))
+			} else {
+				createOp = append(createOp, as.MapPutOp(createOnly, s.collectionBin, groupKey, map[interface{}]interface{}{}))
+			}
 
-				if addColumn[column] {
-					createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, columnValue, s.mapper.columnZeroValue(column), mapKey))
-					op = append(op, as.MapIncrementOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
-				} else if subColumn[column] {
-					createOp = append(createOp, as.MapPutOp(createOnly, s.mapBin, columnValue, s.mapper.columnZeroValue(column), mapKey))
-					op = append(op, as.MapDecrementOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
-				} else {
-					op = append(op, as.MapPutOp(mapPolicy, s.mapBin, columnValue, value, mapKey))
+			if s.mapper.component != nil {
+				key := as.CtxMapKey(as.NewValue(groupKey))
+				arrayKey := bins[s.mapper.arrayIndex.Column()]
+				idx := arrayKey.(int)
+				componentValue, ok := bins[s.mapper.component.Column()]
+				if !ok {
+					return fmt.Errorf("unable to find component value")
 				}
+
+				if addColumn[s.mapper.component.Column()] {
+					ops = append(ops, as.ListIncrementOp(s.collectionBin, idx, as.NewValue(componentValue), key))
+				} else if subColumn[s.mapper.component.Column()] {
+					switch actual := componentValue.(type) {
+					case int64:
+						componentValue = -actual
+					case int:
+						componentValue = -actual
+					case float64:
+						componentValue = -actual
+					}
+					ops = append(ops, as.ListIncrementOp(s.collectionBin, idx, as.NewValue(componentValue), key))
+				} else {
+					ops = append(ops, as.ListSetOp(s.collectionBin, idx, as.NewValue(componentValue), key))
+				}
+
+			} else {
+
+				for col, value := range bins {
+					column := col.(string)
+					columnValue := as.NewStringValue(column)
+
+					if addColumn[column] {
+						createOp = append(createOp, as.MapPutOp(createOnly, s.collectionBin, columnValue, s.mapper.columnZeroValue(column), mapKey))
+						ops = append(ops, as.MapIncrementOp(mapPolicy, s.collectionBin, columnValue, value, mapKey))
+					} else if subColumn[column] {
+						createOp = append(createOp, as.MapPutOp(createOnly, s.collectionBin, columnValue, s.mapper.columnZeroValue(column), mapKey))
+						ops = append(ops, as.MapDecrementOp(mapPolicy, s.collectionBin, columnValue, value, mapKey))
+					} else {
+						ops = append(ops, as.MapPutOp(mapPolicy, s.collectionBin, columnValue, value, mapKey))
+					}
+				}
+
 			}
 		}
 
@@ -201,12 +237,10 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 		if err != nil {
 			return err
 		}
-
 		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 		writePolicy.SendKey = true
-
 		_, _ = s.client.Operate(writePolicy, key, createOp...)
-		if _, err := s.client.Operate(writePolicy, key, op...); err != nil {
+		if _, err := s.client.Operate(writePolicy, key, ops...); err != nil {
 			return err
 		}
 	}
@@ -263,7 +297,7 @@ func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) er
 		}
 		keyValue := s.getKey(s.mapper.pk, bins)
 		delete(bins, s.mapper.pk[0].Column())
-		operations[keyValue] = append(operations[keyValue], as.ListAppendOp(s.listBin, bins))
+		operations[keyValue] = append(operations[keyValue], as.ListAppendOp(s.collectionBin, bins))
 	}
 	for keyValue, operations := range operations {
 		key, err := as.NewKey(s.namespace, s.set, keyValue)
@@ -277,7 +311,7 @@ func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) er
 		if err != nil {
 			return err
 		}
-		rawSize, ok := ret.Bins[s.listBin]
+		rawSize, ok := ret.Bins[s.collectionBin]
 		if !ok {
 			return fmt.Errorf("failed to insert list value")
 		}
@@ -299,7 +333,7 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	}
 
 	if len(s.mapper.pk) == 0 {
-		return fmt.Errorf("unable to find primary key field")
+		return fmt.Errorf("unable to find primary mapKey field")
 	}
 	isMerge := len(s.insert.OnDuplicateKeyUpdate) > 0
 
@@ -313,15 +347,15 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	s.affected = int64(batchCount)
 
 	//if batchCount > 1 { //TODO check impact on regular insert
-	if s.mapBin != "" {
-		if len(s.mapper.key) == 0 {
-			return fmt.Errorf("unable to find map key field")
+	if s.collectionType.IsMap() {
+		if len(s.mapper.mapKey) == 0 {
+			return fmt.Errorf("unable to find map mapKey field")
 		}
 		return s.handleMapLoad(args)
 	}
 	//}
 
-	if s.listBin != "" {
+	if s.collectionType.IsArray() {
 		return s.handleListInsert(args, batchCount)
 	}
 
@@ -343,7 +377,7 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 		writePolicy.SendKey = true
 
-		if s.mapBin != "" {
+		if s.collectionBin != "" {
 			return s.handleMapInsert(bins, err, writePolicy, key)
 		}
 		if isMerge {
@@ -361,9 +395,9 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 }
 
 func (s *Statement) handleMapInsert(bins map[string]interface{}, err error, writePolicy *as.WritePolicy, key *as.Key) error {
-	mapKey := s.getKey(s.mapper.key, bins)
+	mapKey := s.getKey(s.mapper.mapKey, bins)
 	ops := []*as.Operation{
-		as.MapPutOp(as.DefaultMapPolicy(), s.mapBin, mapKey, bins),
+		as.MapPutOp(as.DefaultMapPolicy(), s.collectionBin, mapKey, bins),
 	}
 	_, err = s.client.Operate(writePolicy, key, ops...)
 	return err

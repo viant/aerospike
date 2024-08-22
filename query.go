@@ -108,18 +108,18 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 
 	bins := s.mapper.expandBins()
 
-	if len(s.indexValues) > 0 {
+	if len(s.secondaryIndexValues) > 0 {
 		stmt := as.NewStatement(s.namespace, s.set, bins...)
-		if s.rangeFilter != nil {
-			from := s.rangeFilter.begin
-			to := s.rangeFilter.end
-			// Set a filter to query the secondary index
-			if err = stmt.SetFilter(as.NewRangeFilter(s.mapper.index.Name, int64(from), int64(to))); err != nil {
+		if s.mapRangeFilter != nil {
+			from := s.mapRangeFilter.begin
+			to := s.mapRangeFilter.end
+			// Set a filter to query the secondary secondaryIndex
+			if err = stmt.SetFilter(as.NewRangeFilter(s.mapper.secondaryIndex.Name, int64(from), int64(to))); err != nil {
 				return nil, err
 			}
 		} else {
-			// Set a filter to query the secondary index
-			if err = stmt.SetFilter(as.NewEqualFilter(s.mapper.index.Column(), s.indexValues[0])); err != nil {
+			// Set a filter to query the secondary secondaryIndex
+			if err = stmt.SetFilter(as.NewEqualFilter(s.mapper.secondaryIndex.Column(), s.secondaryIndexValues[0])); err != nil {
 				return nil, err
 			}
 		}
@@ -144,7 +144,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	switch len(keys) {
 	case 0:
 		if s.query.Qualify != nil {
-			return nil, fmt.Errorf("executeselect: unsupported parameterizedQuery without key")
+			return nil, fmt.Errorf("executeselect: unsupported parameterizedQuery without mapKey")
 			//use parameterizedQuery call
 		} else {
 			recordset, err := s.client.ScanAll(as.NewScanPolicy(), s.namespace, s.set)
@@ -155,13 +155,10 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			rows.rowsReader = &RowsScanReader{Recordset: recordset}
 		}
 	case 1:
-		if s.mapper.component != nil {
-			return s.handleMapListQuery(keys, rows)
-		}
-		if s.mapBin != "" {
+		if s.collectionType.IsMap() {
 			return s.handleMapQuery(keys, rows)
 		}
-		if s.listBin != "" {
+		if s.collectionType.IsArray() {
 			return s.handleListQuery(keys, rows)
 		}
 
@@ -178,7 +175,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	default:
 		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		recs := make([]*as.Record, 0)
-		if s.mapBin != "" {
+		if s.collectionBin != "" {
 			for i := range records {
 				if records[i] != nil {
 					e := s.handleBinResult(records[i], &recs)
@@ -190,7 +187,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			rows.rowsReader = newRowsReader(recs)
 			return rows, nil
 
-		} else if s.listBin != "" {
+		} else if s.collectionType.IsArray() {
 			for i := range records {
 				if records[i] != nil {
 					e := s.handleListBinResult(records[i], &recs, true)
@@ -232,37 +229,43 @@ func (s *Statement) lookupSet() (*set, error) {
 }
 
 func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, error) {
+
+	if s.mapper.component != nil {
+		return s.handleMapListQuery(keys, rows)
+	}
+
 	var err error
 	var op []*as.Operation
-	if s.rangeFilter != nil || len(s.keyValues) > 0 {
+	if s.mapRangeFilter != nil || len(s.mapKeyValues) > 0 {
 		switch {
-		case s.rangeFilter != nil && len(s.keyValues) > 0:
-			return nil, fmt.Errorf("unsupported criteria combination: key values list and key range")
-		case s.rangeFilter != nil:
-			op = append(op, as.MapGetByKeyRangeOp(s.mapBin, s.rangeFilter.begin, s.rangeFilter.end+1, as.MapReturnType.VALUE))
-		case len(s.keyValues) == 1:
-			op = append(op, as.MapGetByKeyOp(s.mapBin, s.keyValues[0], as.MapReturnType.VALUE))
-		case len(s.keyValues) > 1:
-			op = append(op, as.MapGetByKeyListOp(s.mapBin, s.keyValues, as.MapReturnType.VALUE))
+		case s.mapRangeFilter != nil && len(s.mapKeyValues) > 0:
+			return nil, fmt.Errorf("unsupported criteria combination: mapKey values list and mapKey range")
+		case s.mapRangeFilter != nil:
+			op = append(op, as.MapGetByKeyRangeOp(s.collectionBin, s.mapRangeFilter.begin, s.mapRangeFilter.end+1, as.MapReturnType.KEY_VALUE))
+		case len(s.mapKeyValues) == 1:
+			op = append(op, as.MapGetByKeyOp(s.collectionBin, s.mapKeyValues[0], as.MapReturnType.KEY_VALUE))
+		case len(s.mapKeyValues) > 1:
+			op = append(op, as.MapGetByKeyListOp(s.collectionBin, s.mapKeyValues, as.MapReturnType.KEY_VALUE))
 		}
 		result, err := s.client.Operate(nil, keys[0], op...)
 		if err != nil {
 			return handleNotFoundError(err, rows)
 		}
-		values, _ := result.Bins[s.mapBin]
+		values, _ := result.Bins[s.collectionBin]
 		var records []interface{}
 		if values != nil {
 			switch {
-			case len(s.keyValues) == 1:
+			case len(s.mapKeyValues) == 1:
 				records = []interface{}{values}
 			default:
 				records, _ = values.([]interface{})
 			}
-
 		}
+		//THIS IS BROKEN fix me !!!
 		rows.rowsReader = newInterfaceReader(records)
+		return rows, nil
 	}
-	record, err := s.client.Get(as.NewPolicy(), keys[0], s.mapper.pk[0].Column(), s.mapBin)
+	record, err := s.client.Get(as.NewPolicy(), keys[0], s.mapper.pk[0].Column(), s.collectionBin)
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}
@@ -277,44 +280,89 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 func (s *Statement) handleMapListQuery(keys []*as.Key, rows *Rows) (driver.Rows, error) {
 	var err error
 	var op []*as.Operation
-	if s.rangeFilter != nil || len(s.keyValues) > 0 {
+	if s.mapRangeFilter != nil || len(s.mapKeyValues) > 0 {
 		switch {
-		case s.rangeFilter != nil && len(s.keyValues) > 0:
-			return nil, fmt.Errorf("unsupported criteria combination: key values list and key range")
-		case s.rangeFilter != nil:
-			op = append(op, as.MapGetByKeyRangeOp(s.mapBin, s.rangeFilter.begin, s.rangeFilter.end+1, as.MapReturnType.VALUE))
-		case len(s.keyValues) == 1:
-			op = append(op, as.MapGetByKeyOp(s.mapBin, s.keyValues[0], as.MapReturnType.VALUE))
-		case len(s.keyValues) > 1:
-			op = append(op, as.MapGetByKeyListOp(s.mapBin, s.keyValues, as.MapReturnType.VALUE))
+		case s.mapRangeFilter != nil && len(s.mapKeyValues) > 0:
+			return nil, fmt.Errorf("unsupported criteria combination: mapKey values list and mapKey range")
+		case s.mapRangeFilter != nil:
+
+			op = append(op, as.MapGetByKeyRangeOp(s.collectionBin, s.mapRangeFilter.begin, s.mapRangeFilter.end+1, as.MapReturnType.VALUE))
+		case len(s.mapKeyValues) == 1:
+			op = append(op, as.MapGetByKeyOp(s.collectionBin, s.mapKeyValues[0], as.MapReturnType.KEY_VALUE))
+		case len(s.mapKeyValues) > 1:
+			op = append(op, as.MapGetByKeyListOp(s.collectionBin, s.mapKeyValues, as.MapReturnType.KEY_VALUE))
 		}
 		result, err := s.client.Operate(nil, keys[0], op...)
 		if err != nil {
 			return handleNotFoundError(err, rows)
 		}
-		values, _ := result.Bins[s.mapBin]
-		var records []interface{}
-		if values != nil {
-			switch {
-			case len(s.keyValues) == 1:
-				records = []interface{}{values}
-			default:
-				records, _ = values.([]interface{})
-			}
-
+		values, ok := result.Bins[s.collectionBin]
+		if !ok {
+			rows.rowsReader = newRowsReader([]*as.Record{})
+			return rows, nil
 		}
-		rows.rowsReader = newInterfaceReader(records)
+		pairs, ok := values.([]as.MapPair)
+		if !ok {
+			rows.rowsReader = newRowsReader([]*as.Record{})
+			return rows, nil
+		}
+		recs, verr := s.convertMapSlicePairsToRecords(keys, pairs)
+		if verr != nil {
+			return nil, verr
+		}
+		rows.rowsReader = newRowsReader(recs)
+		return rows, nil
 	}
-	record, err := s.client.Get(as.NewPolicy(), keys[0], s.mapper.pk[0].Column(), s.mapBin)
+	record, err := s.client.Get(as.NewPolicy(), keys[0], s.mapper.pk[0].Column(), s.collectionBin)
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}
 	records := make([]*as.Record, 0)
-	if err = s.handleBinComponentResult(record, &records); err != nil {
+
+	if err = s.handleBinMapArrayComponentResult(record, &records); err != nil {
 		return nil, err
 	}
 	rows.rowsReader = newRowsReader(records)
 	return rows, nil
+}
+
+func (s *Statement) convertMapSlicePairsToRecords(keys []*as.Key, pairs []as.MapPair) ([]*as.Record, error) {
+	var records []*as.Record
+	var whiteListedIndexes = map[int]bool{}
+	if s.arrayIndexValues != nil {
+		for _, key := range s.arrayIndexValues {
+			whiteListedIndexes[key] = true
+		}
+	}
+
+	for _, pair := range pairs {
+		items, ok := pair.Value.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("unsupported map component %v value type: %T", s.mapper.component.Column(), pair.Value)
+		}
+		for i, item := range items {
+			if s.arrayRangeFilter != nil {
+				if i < s.arrayRangeFilter.begin {
+					continue
+				}
+				if i > s.arrayRangeFilter.end {
+					break
+				}
+			} else if len(whiteListedIndexes) > 0 {
+				if _, ok := whiteListedIndexes[i]; !ok {
+					continue
+				}
+			}
+
+			record := &as.Record{Bins: map[string]interface{}{}}
+			record.Bins[s.mapper.mapKey[0].Column()] = pair.Key
+			record.Bins[s.mapper.pk[0].Column()] = keys[0].Value()
+			record.Bins[s.mapper.component.Column()] = item
+			record.Bins[s.mapper.arrayIndex.Column()] = i
+			records = append(records, record)
+		}
+	}
+	return records, nil
 }
 
 func handleNotFoundError(err error, rows *Rows) (driver.Rows, error) {
@@ -338,7 +386,7 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 			fName := sqlparser.Stringify(call.X)
 			switch strings.ToLower(fName) {
 			case "count":
-				op = append(op, as.ListSizeOp(s.listBin))
+				op = append(op, as.ListSizeOp(s.collectionBin))
 				funcColumn = col
 			default:
 				return nil, fmt.Errorf("unsupported aggregation function: %s", fName)
@@ -347,17 +395,17 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 		}
 	}
 
-	if len(s.keyValues) > 0 {
+	if len(s.arrayIndexValues) > 0 {
 		switch {
-		case s.rangeFilter != nil && len(s.keyValues) > 0:
-			return nil, fmt.Errorf("unsupported criteria combination: key rawValues list and key range")
-		case s.rangeFilter != nil:
-			return nil, fmt.Errorf("unsupported criteria combination: key rawValues list and key range")
-		case len(s.keyValues) == 1:
-			op = append(op, as.ListGetOp(s.listBin, s.keyValues[0].(int)))
-		case len(s.keyValues) > 1:
-			for j := range s.keyValues {
-				op = append(op, as.ListGetOp(s.listBin, s.keyValues[j].(int)))
+		case s.arrayRangeFilter != nil && len(s.arrayIndexValues) > 0:
+			return nil, fmt.Errorf("unsupported criteria combination: mapKey rawValues list and mapKey range")
+		case s.arrayRangeFilter != nil:
+			return nil, fmt.Errorf("unsupported criteria combination: mapKey rawValues list and mapKey range")
+		case len(s.arrayIndexValues) == 1:
+			op = append(op, as.ListGetOp(s.collectionBin, s.arrayIndexValues[0]))
+		case len(s.arrayIndexValues) > 1:
+			for j := range s.arrayIndexValues {
+				op = append(op, as.ListGetOp(s.collectionBin, s.arrayIndexValues[j]))
 			}
 		}
 	}
@@ -371,7 +419,7 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 			return nil, err
 		}
 
-		rawValues, ok := result.Bins[s.listBin]
+		rawValues, ok := result.Bins[s.collectionBin]
 		if funcColumn != "" {
 			rows.rowsReader = newRowsReader([]*as.Record{{Bins: map[string]interface{}{funcColumn: rawValues}}})
 			return rows, nil
@@ -390,15 +438,16 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 			for k, v := range properties {
 				aRecord.Bins[k.(string)] = v
 			}
-			aRecord.Bins[s.mapper.key[0].Column()] = s.keyValues[j]
+			aRecord.Bins[s.mapper.mapKey[0].Column()] = s.arrayIndexValues[j]
 			aRecord.Bins[s.mapper.pk[0].Column()] = s.pkValues[0]
 			records = append(records, aRecord)
 		}
+		//THIS IS BROKEN fix me !!!
 		rows.rowsReader = newRowsReader(records)
 		return rows, nil
 	}
 
-	record, err := s.client.Get(as.NewPolicy(), keys[0], s.listBin, s.mapper.pk[0].Column())
+	record, err := s.client.Get(as.NewPolicy(), keys[0], s.collectionBin, s.mapper.pk[0].Column())
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}
@@ -411,14 +460,14 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 }
 
 func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record, applyFilter bool) error {
-	if mapBin, ok := record.Bins[s.listBin]; ok {
+	if mapBin, ok := record.Bins[s.collectionBin]; ok {
 		listBinSlice, ok := mapBin.([]interface{})
 		if !ok {
 			return fmt.Errorf("invalid map bin value: %v", mapBin)
 		}
 		var filter = map[interface{}]bool{}
-		if len(s.keyValues) > 0 && applyFilter {
-			for _, key := range s.keyValues {
+		if len(s.arrayIndexValues) > 0 && applyFilter {
+			for _, key := range s.arrayIndexValues {
 				filter[key] = true
 			}
 		}
@@ -428,8 +477,8 @@ func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record
 
 				}
 			}
-			if s.rangeFilter != nil && applyFilter {
-				if index < s.rangeFilter.begin || index > s.rangeFilter.end {
+			if s.arrayRangeFilter != nil && applyFilter {
+				if index < s.arrayRangeFilter.begin || index > s.arrayRangeFilter.end {
 					continue
 				}
 			}
@@ -438,8 +487,8 @@ func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record
 			for k, v := range properties {
 				itemRecord.Bins[k.(string)] = v
 			}
-			if _, ok := itemRecord.Bins[s.mapper.key[0].Column()]; !ok {
-				itemRecord.Bins[s.mapper.key[0].Column()] = index
+			if _, ok := itemRecord.Bins[s.mapper.mapKey[0].Column()]; !ok {
+				itemRecord.Bins[s.mapper.mapKey[0].Column()] = index
 			}
 			itemRecord.Bins[s.mapper.pk[0].Column()] = record.Key.Value()
 			*records = append(*records, itemRecord)
@@ -449,14 +498,14 @@ func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record
 }
 
 func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) error {
-	if mapBin, ok := record.Bins[s.mapBin]; ok {
+	if mapBin, ok := record.Bins[s.collectionBin]; ok {
 		mapBinMap, ok := mapBin.(map[interface{}]interface{})
 		if !ok {
 			return fmt.Errorf("invalid map bin value: %v", mapBin)
 		}
 		var filter = map[interface{}]bool{}
-		if len(s.keyValues) > 0 {
-			for _, key := range s.keyValues {
+		if len(s.mapKeyValues) > 0 {
+			for _, key := range s.mapKeyValues {
 				filter[key] = true
 			}
 		}
@@ -468,12 +517,12 @@ func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) er
 			}
 
 			// TODO add support for BatchGet and/or ScanAll -> BatchGetOperate
-			if s.rangeFilter != nil {
+			if s.mapRangeFilter != nil {
 				mapBinKeyInt, ok := mapKey.(int)
 				if !ok {
 					return fmt.Errorf("unsupported type for between operator - got: %T expected %T", mapKey, mapBinKeyInt)
 				}
-				if mapBinKeyInt < s.rangeFilter.begin || mapBinKeyInt > s.rangeFilter.end {
+				if mapBinKeyInt < s.mapRangeFilter.begin || mapBinKeyInt > s.mapRangeFilter.end {
 					continue
 				}
 			}
@@ -493,93 +542,37 @@ func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) er
 	return nil
 }
 
-func (s *Statement) handleBinComponentResult(record *as.Record, records *[]*as.Record) error {
-	if mapBin, ok := record.Bins[s.mapBin]; ok {
+func (s *Statement) handleBinMapArrayComponentResult(record *as.Record, records *[]*as.Record) error {
+	if mapBin, ok := record.Bins[s.collectionBin]; ok {
 		mapBinMap, ok := mapBin.(map[interface{}]interface{})
 		if !ok {
 			return fmt.Errorf("invalid map bin value: %v", mapBin)
 		}
 		var filter = map[interface{}]bool{}
-		if len(s.keyValues) > 0 {
-			for _, key := range s.keyValues {
+		if len(s.mapKeyValues) > 0 {
+			for _, key := range s.mapKeyValues {
 				filter[key] = true
 			}
 		}
-
-		var mapKeyName string
-		var PKName string
-		var componentName string
-		var listKeyName string
-
-		for _, f := range s.mapper.fields {
-			if f.tag.IsMapKey {
-				mapKeyName = f.tag.Name
-			}
-
-			if f.tag.IsPK {
-				PKName = f.tag.Name
-			}
-
-			if f.tag.IsComponent {
-				componentName = f.tag.Name
-			}
-
-			if f.tag.IsListKey {
-				listKeyName = f.tag.Name
-			}
-		}
-
-		/// 1 s
+		mapKeyName := s.mapper.mapKey[0].Column()
+		pkName := s.mapper.pk[0].Column()
+		componentName := s.mapper.component.Column()
+		listIndexName := s.mapper.arrayIndex.Column()
 		for mapKey, mapValue := range mapBinMap {
-			// TODO
 			entry, ok := mapValue.([]interface{})
 			if !ok {
 				return fmt.Errorf("invalid map bin entry value: %v", mapValue)
 			}
-
 			for idx, value := range entry {
 				var rec = &as.Record{Bins: map[string]interface{}{}}
-				//key := fmt.Sprintf("%v", k) //TODO
-
-				rec.Bins[PKName] = record.Key.Value()
+				rec.Bins[pkName] = record.Key.Value()
 				rec.Bins[mapKeyName] = mapKey
-				rec.Bins[listKeyName] = idx
+				rec.Bins[listIndexName] = idx
 				rec.Bins[componentName] = value
 				*records = append(*records, rec)
 			}
-
-			// TODO
 		}
-		/// 1 e
-		//for mapKey, v := range mapBinMap {
-		//	if len(filter) > 0 {
-		//		if _, ok := filter[mapKey]; !ok {
-		//			continue
-		//		}
-		//	}
-		//
-		//	// TODO add support for BatchGet and/or ScanAll -> BatchGetOperate
-		//	if s.rangeFilter != nil {
-		//		mapBinKeyInt, ok := mapKey.(int)
-		//		if !ok {
-		//			return fmt.Errorf("unsupported type for between operator - got: %T expected %T", mapKey, mapBinKeyInt)
-		//		}
-		//		if mapBinKeyInt < s.rangeFilter.begin || mapBinKeyInt > s.rangeFilter.end {
-		//			continue
-		//		}
-		//	}
-		//
-		//	entry, ok := v.(map[interface{}]interface{})
-		//	if !ok {
-		//		return fmt.Errorf("invalid map bin entry value: %v", v)
-		//	}
-		//	var record = &as.Record{Bins: map[string]interface{}{}}
-		//	for k, value := range entry {
-		//		key, _ := k.(string)
-		//		record.Bins[key] = value
-		//	}
-		//	*records = append(*records, record)
-		//}
+
 	}
 	return nil
 }

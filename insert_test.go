@@ -42,10 +42,10 @@ func BenchmarkStatement_ExecContext_BatchInsert(b *testing.B) {
 }
 
 /*
--- Create a secondary index on the keys of the map_bin bin in the test.example_set_2 set
+-- Create a secondary secondaryIndex on the keys of the map_bin bin in the test.example_set_2 set
 CREATE INDEX map_key_index ON test.example_set_2 (map_bin) MAPKEYS STRING;
 
--- Create a secondary index on the values of the map_bin bin in the test.example_set_2 set
+-- Create a secondary secondaryIndex on the values of the map_bin bin in the test.example_set_2 set
 CREATE INDEX map_value_index ON test.example_set_2 (map_bin) MAPVALUES NUMERIC;
 
 
@@ -95,7 +95,7 @@ func BenchmarkStatement_ExecContext_BatchMerge(b *testing.B) {
 
 type PerfTest struct {
 	ID       int     `aerospike:"id,pk"`
-	Seq      int     `aerospike:"seq,key"`
+	Seq      int     `aerospike:"seq,mapKey"`
 	Active   int     `aerospike:"active"`
 	Quantity int     `aerospike:"quantity"`
 	Value    float64 `aerospike:"value"`

@@ -23,39 +23,57 @@ import (
 	"strings"
 )
 
+type collectionType string
+
+func (c collectionType) IsMap() bool {
+	return c == collectionTypeMap
+}
+
+func (c collectionType) IsArray() bool {
+	return c == collectionTypeArray
+}
+
+const (
+	collectionTypeMap   collectionType = "map"
+	collectionTypeArray collectionType = "array"
+)
+
 // Statement abstraction implements database/sql driver.Statement interface
 type Statement struct {
 	client *as.Client
 	cfg    *Config
 	//BaseURL    string
-	SQL            string
-	kind           sqlparser.Kind
-	sets           *registry
-	query          *query.Select
-	insert         *insert.Statement
-	update         *update.Statement
-	delete         *delete.Statement
-	truncate       *table.Truncate
-	createIndex    *index.Create
-	dropIndex      *index.Drop
-	mapper         *mapper
-	filter         *as.Filter
-	rangeFilter    *rangeBinFilter
-	recordType     reflect.Type
-	falsePredicate bool
-	record         interface{}
-	numInput       int
-	set            string
-	source         string
-	componentKey   string
-	mapBin         string
-	listBin        string
-	namespace      string
-	pkValues       []interface{}
-	keyValues      []interface{}
-	indexValues    []interface{}
-	lastInsertID   *int64
-	affected       int64
+	SQL              string
+	kind             sqlparser.Kind
+	sets             *registry
+	query            *query.Select
+	insert           *insert.Statement
+	update           *update.Statement
+	delete           *delete.Statement
+	truncate         *table.Truncate
+	createIndex      *index.Create
+	dropIndex        *index.Drop
+	mapper           *mapper
+	filter           *as.Filter
+	mapRangeFilter   *rangeBinFilter
+	arrayRangeFilter *rangeBinFilter
+	recordType       reflect.Type
+	falsePredicate   bool
+	record           interface{}
+	numInput         int
+	set              string
+	source           string
+	componentKey     string
+
+	collectionBin        string
+	collectionType       collectionType
+	namespace            string
+	pkValues             []interface{}
+	mapKeyValues         []interface{}
+	arrayIndexValues     []int
+	secondaryIndexValues []interface{}
+	lastInsertID         *int64
+	affected             int64
 }
 
 // Exec executes statements
@@ -122,7 +140,7 @@ func (s *Statement) setSet(source string) {
 		source = s.set
 	}
 	if index := strings.Index(source, "/"); index != -1 {
-		s.mapBin = source[index+1:]
+		s.collectionBin = source[index+1:]
 		s.set = source[:index]
 	}
 }
@@ -239,19 +257,25 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 	}
 	pkName := "-"
 	if s.mapper != nil && len(s.mapper.pk) == 1 {
-		pkName = s.mapper.pk[0].Column()
+		pkName = strings.ToLower(s.mapper.pk[0].Column())
 	}
 	keyName := "--"
-	if s.mapper != nil && len(s.mapper.key) == 1 {
-		keyName = s.mapper.key[0].Column()
+	if s.mapper != nil && len(s.mapper.mapKey) == 1 {
+		keyName = strings.ToLower(s.mapper.mapKey[0].Column())
 	}
-	indexName := "---"
-	if s.mapper != nil && s.mapper.index != nil {
-		indexName = s.mapper.index.Column()
+
+	arrayIndex := "---"
+	if s.mapper != nil && s.mapper.arrayIndex != nil {
+		arrayIndex = strings.ToLower(s.mapper.arrayIndex.Column())
+	}
+
+	indexName := "----"
+	if s.mapper != nil && s.mapper.secondaryIndex != nil {
+		indexName = strings.ToLower(s.mapper.secondaryIndex.Column())
 	}
 	isMultiInPk := len(s.mapper.pk) > 1
-	isMultiInKey := len(s.mapper.key) > 1
-	isIndexKey := s.mapper.index != nil
+	isMultiInKey := len(s.mapper.mapKey) > 1
+	isSecondaryIndexKey := s.mapper.secondaryIndex != nil
 	if binary.Op == "=" {
 		if leftLiteral, ok := binary.X.(*expr.Literal); ok {
 			if rightLiteral, ok := binary.Y.(*expr.Literal); ok {
@@ -260,7 +284,6 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 			}
 		}
 	}
-
 	idx := 0
 	err := binary.Walk(func(ident node.Node, values *expr.Values, operator, parentOperator string) error {
 		if parentOperator != "" && strings.ToUpper(parentOperator) != "AND" {
@@ -280,46 +303,49 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		if isMultiInKey {
 
 		}
-		if isIndexKey {
-			if name == s.mapper.index.Column() {
-				s.indexValues = exprValues
+		if isSecondaryIndexKey {
+			if name == s.mapper.secondaryIndex.Column() {
+				s.secondaryIndexValues = exprValues
 				return nil
 			}
 		}
 		switch name {
 		case indexName:
-			s.indexValues = exprValues
+			s.secondaryIndexValues = exprValues
 		case "pk", pkName:
 			s.pkValues = exprValues
-		case "key", keyName:
-
+		case arrayIndex, "index":
 			switch strings.ToLower(operator) {
 			case "=", "in":
-				s.keyValues = exprValues
+				for _, item := range exprValues {
+					i, ok := item.(int)
+					if !ok {
+						return fmt.Errorf("unable to get int value from criteria value %v", item)
+					}
+					s.arrayIndexValues = append(s.arrayIndexValues, i)
+				}
 			case "between":
-				if len(exprValues) != 2 {
-					return fmt.Errorf("invalid criteria - between expects 2 values")
+				filter, err := s.buildRangeFilter(exprValues, name)
+				if err != nil {
+					return err
 				}
-
-				from, ok := exprValues[0].(int)
-				if !ok {
-					return fmt.Errorf("unable to get int value from criteria value %v", exprValues[0])
-				}
-
-				to, ok := exprValues[1].(int)
-				if !ok {
-					return fmt.Errorf("unable to get int value from criteria value %v", exprValues[1])
-				}
-
-				s.rangeFilter = &rangeBinFilter{
-					name:  name,
-					begin: from,
-					end:   to,
-				}
-				//Filter add range operator
-			//case "like":
+				s.arrayRangeFilter = filter
 			default:
-				return fmt.Errorf("unsupported operator of a mapbin key: %s", operator)
+				return fmt.Errorf("unsupported operator of a mapbin mapKey: %s", operator)
+			}
+
+		case "key", keyName:
+			switch strings.ToLower(operator) {
+			case "=", "in":
+				s.mapKeyValues = exprValues
+			case "between":
+				filter, err := s.buildRangeFilter(exprValues, name)
+				if err != nil {
+					return err
+				}
+				s.mapRangeFilter = filter
+			default:
+				return fmt.Errorf("unsupported operator of a mapbin mapKey: %s", operator)
 			}
 		default:
 			if !includeFilter {
@@ -330,7 +356,6 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 				if len(exprValues) != 2 {
 					return fmt.Errorf("invalid criteria values")
 				}
-
 				from, ok := exprValues[0].(int)
 				if !ok {
 					return fmt.Errorf("unable to get int value from criteria value %v", exprValues[0])
@@ -343,12 +368,12 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 
 				s.filter = as.NewRangeFilter(name, int64(from), int64(to))
 				//Filter add range operator
-			case "like":
-				//contain
-			case "=":
+			case "=", "in":
+			default:
+				return fmt.Errorf("unsupported operator of a mapbin mapKey: %s", operator)
 				//equal criteria
 			}
-			//you may still use aerospike parameterizedQuery with index
+			//you may still use aerospike parameterizedQuery with secondaryIndex
 		}
 		return nil
 	})
@@ -356,6 +381,29 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		return err
 	}
 	return nil
+}
+
+func (s *Statement) buildRangeFilter(exprValues []interface{}, name string) (*rangeBinFilter, error) {
+	if len(exprValues) != 2 {
+		return nil, fmt.Errorf("invalid criteria - between expects 2 values")
+	}
+
+	from, ok := exprValues[0].(int)
+	if !ok {
+		return nil, fmt.Errorf("unable to get int value from criteria value %v", exprValues[0])
+	}
+
+	to, ok := exprValues[1].(int)
+	if !ok {
+		return nil, fmt.Errorf("unable to get int value from criteria value %v", exprValues[1])
+	}
+
+	filter := &rangeBinFilter{
+		name:  name,
+		begin: from,
+		end:   to,
+	}
+	return filter, nil
 }
 
 func (s *Statement) buildKeys() ([]*as.Key, error) {
@@ -394,9 +442,10 @@ func (s *Statement) setTypeBasedMapper() error {
 		s.mapper = aSet.typeBasedMapper
 	}
 
-	if s.mapper.listKey && !s.mapper.mapKey {
-		s.listBin = s.mapBin
-		s.mapBin = ""
+	if len(s.mapper.mapKey) > 0 {
+		s.collectionType = collectionTypeMap
+	} else if s.mapper.arrayIndex != nil {
+		s.collectionType = collectionTypeArray
 	}
 
 	return nil
@@ -424,7 +473,7 @@ func (s *Statement) getKey(fields []*field, bins map[string]interface{}) interfa
 	return nil
 }
 
-// IsKeyNotFound returns true if key not found error.
+// IsKeyNotFound returns true if mapKey not found error.
 func IsKeyNotFound(err error) bool {
 	if err == nil {
 		return false
