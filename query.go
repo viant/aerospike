@@ -155,6 +155,9 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			rows.rowsReader = &RowsScanReader{Recordset: recordset}
 		}
 	case 1:
+		if s.mapper.component != nil {
+			return s.handleMapListQuery(keys, rows)
+		}
 		if s.mapBin != "" {
 			return s.handleMapQuery(keys, rows)
 		}
@@ -265,6 +268,49 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 	}
 	records := make([]*as.Record, 0)
 	if err = s.handleBinResult(record, &records); err != nil {
+		return nil, err
+	}
+	rows.rowsReader = newRowsReader(records)
+	return rows, nil
+}
+
+func (s *Statement) handleMapListQuery(keys []*as.Key, rows *Rows) (driver.Rows, error) {
+	var err error
+	var op []*as.Operation
+	if s.rangeFilter != nil || len(s.keyValues) > 0 {
+		switch {
+		case s.rangeFilter != nil && len(s.keyValues) > 0:
+			return nil, fmt.Errorf("unsupported criteria combination: key values list and key range")
+		case s.rangeFilter != nil:
+			op = append(op, as.MapGetByKeyRangeOp(s.mapBin, s.rangeFilter.begin, s.rangeFilter.end+1, as.MapReturnType.VALUE))
+		case len(s.keyValues) == 1:
+			op = append(op, as.MapGetByKeyOp(s.mapBin, s.keyValues[0], as.MapReturnType.VALUE))
+		case len(s.keyValues) > 1:
+			op = append(op, as.MapGetByKeyListOp(s.mapBin, s.keyValues, as.MapReturnType.VALUE))
+		}
+		result, err := s.client.Operate(nil, keys[0], op...)
+		if err != nil {
+			return handleNotFoundError(err, rows)
+		}
+		values, _ := result.Bins[s.mapBin]
+		var records []interface{}
+		if values != nil {
+			switch {
+			case len(s.keyValues) == 1:
+				records = []interface{}{values}
+			default:
+				records, _ = values.([]interface{})
+			}
+
+		}
+		rows.rowsReader = newInterfaceReader(records)
+	}
+	record, err := s.client.Get(as.NewPolicy(), keys[0], s.mapper.pk[0].Column(), s.mapBin)
+	if err != nil {
+		return handleNotFoundError(err, rows)
+	}
+	records := make([]*as.Record, 0)
+	if err = s.handleBinComponentResult(record, &records); err != nil {
 		return nil, err
 	}
 	rows.rowsReader = newRowsReader(records)
@@ -443,6 +489,97 @@ func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) er
 			}
 			*records = append(*records, record)
 		}
+	}
+	return nil
+}
+
+func (s *Statement) handleBinComponentResult(record *as.Record, records *[]*as.Record) error {
+	if mapBin, ok := record.Bins[s.mapBin]; ok {
+		mapBinMap, ok := mapBin.(map[interface{}]interface{})
+		if !ok {
+			return fmt.Errorf("invalid map bin value: %v", mapBin)
+		}
+		var filter = map[interface{}]bool{}
+		if len(s.keyValues) > 0 {
+			for _, key := range s.keyValues {
+				filter[key] = true
+			}
+		}
+
+		var mapKeyName string
+		var PKName string
+		var componentName string
+		var listKeyName string
+
+		for _, f := range s.mapper.fields {
+			if f.tag.IsMapKey {
+				mapKeyName = f.tag.Name
+			}
+
+			if f.tag.IsPK {
+				PKName = f.tag.Name
+			}
+
+			if f.tag.IsComponent {
+				componentName = f.tag.Name
+			}
+
+			if f.tag.IsListKey {
+				listKeyName = f.tag.Name
+			}
+		}
+
+		/// 1 s
+		for mapKey, mapValue := range mapBinMap {
+			// TODO
+			entry, ok := mapValue.([]interface{})
+			if !ok {
+				return fmt.Errorf("invalid map bin entry value: %v", mapValue)
+			}
+
+			for idx, value := range entry {
+				var rec = &as.Record{Bins: map[string]interface{}{}}
+				//key := fmt.Sprintf("%v", k) //TODO
+
+				rec.Bins[PKName] = record.Key.Value()
+				rec.Bins[mapKeyName] = mapKey
+				rec.Bins[listKeyName] = idx
+				rec.Bins[componentName] = value
+				*records = append(*records, rec)
+			}
+
+			// TODO
+		}
+		/// 1 e
+		//for mapKey, v := range mapBinMap {
+		//	if len(filter) > 0 {
+		//		if _, ok := filter[mapKey]; !ok {
+		//			continue
+		//		}
+		//	}
+		//
+		//	// TODO add support for BatchGet and/or ScanAll -> BatchGetOperate
+		//	if s.rangeFilter != nil {
+		//		mapBinKeyInt, ok := mapKey.(int)
+		//		if !ok {
+		//			return fmt.Errorf("unsupported type for between operator - got: %T expected %T", mapKey, mapBinKeyInt)
+		//		}
+		//		if mapBinKeyInt < s.rangeFilter.begin || mapBinKeyInt > s.rangeFilter.end {
+		//			continue
+		//		}
+		//	}
+		//
+		//	entry, ok := v.(map[interface{}]interface{})
+		//	if !ok {
+		//		return fmt.Errorf("invalid map bin entry value: %v", v)
+		//	}
+		//	var record = &as.Record{Bins: map[string]interface{}{}}
+		//	for k, value := range entry {
+		//		key, _ := k.(string)
+		//		record.Bins[key] = value
+		//	}
+		//	*records = append(*records, record)
+		//}
 	}
 	return nil
 }

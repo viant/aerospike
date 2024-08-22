@@ -79,10 +79,8 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 			mapPolicy := as.DefaultMapPolicy()
 			var values = make(map[interface{}]interface{}, len(group))
 			if s.mapper.component != nil {
-				if s.mapper.component != nil {
-					if err := s.ensureMapOfSlice(group, key); err != nil {
-						return err
-					}
+				if err := s.ensureMapOfSlice(group, key); err != nil {
+					return err
 				}
 				for k, v := range group {
 					indexLiteral, ok := v[s.mapper.index.Column()]
@@ -134,6 +132,7 @@ func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]inter
 	}
 	ops = append(ops, as.MapPutItemsOp(newEntryPolicy, s.mapBin, values))
 	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
+	writePolicy.SendKey = true
 	if _, err := s.client.Operate(writePolicy, key, ops...); err != nil {
 		return err
 	}

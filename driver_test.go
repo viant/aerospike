@@ -6,6 +6,7 @@ import (
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/stretchr/testify/assert"
+	"github.com/viant/toolbox"
 	"log"
 	"sort"
 	"sync"
@@ -584,10 +585,10 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	type Signal struct {
-		ID     string      `aerospike:"id,pk=true"` //--> day,value
-		Value  interface{} `aerospike:"value,key"`
-		Bucket int         `aerospike:"bucket,listKey,array=10"`
-		Count  int         `aerospike:"count,component"`
+		ID           string      `aerospike:"id,pk=true"` //--> day,value
+		CompactValue interface{} `aerospike:"compactValue,key"`
+		Bucket       int         `aerospike:"bucket,listKey,array=10"`
+		Count        int         `aerospike:"count,component"`
 	}
 
 	var sets = []*parameterizedQuery{
@@ -616,25 +617,25 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = tstCases{
-
 		{
 			description: "array ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			querySQL:    "SELECT id,value,bucket,count FROM Siginal WHERE id = ?",
+			//querySQL:    "SELECT id,value,bucket,count FROM Signal WHERE pk = ?",
+			querySQL:    "SELECT * FROM Signal/Values WHERE pk = ?",
 			queryParams: []interface{}{"1"},
 			init: []string{
 				"TRUNCATE TABLE Signal ",
 			},
-			execSQL:    "INSERT INTO Signal/Values(id,value,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?)",
+			execSQL:    "INSERT INTO Signal/Values(id,compactValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?)",
 			execParams: []interface{}{"1", "v1", 1, 10, "1", "v1", 2, 11, "1", "v2", 3, 12},
 			expect: []interface{}{
-				&Signal{ID: "1", Value: "v1", Bucket: 1, Count: 10},
-				&Signal{ID: "1", Value: "v1", Bucket: 2, Count: 11},
-				&Signal{ID: "1", Value: "v2", Bucket: 3, Count: 12},
+				&Signal{ID: "1", CompactValue: "v1", Bucket: 1, Count: 10},
+				&Signal{ID: "1", CompactValue: "v1", Bucket: 2, Count: 11},
+				&Signal{ID: "1", CompactValue: "v2", Bucket: 3, Count: 12},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				agg := Signal{}
-				err := r.Scan(&agg.ID, &agg.Value, &agg.Bucket, &agg.Count)
+				err := r.Scan(&agg.ID, &agg.CompactValue, &agg.Bucket, &agg.Count)
 				return &agg, err
 			},
 		},
@@ -642,7 +643,7 @@ func Test_QueryContext(t *testing.T) {
 		/*
 
 			id,pk=true"` //--> day,value
-				Value  interface{} `aerospike:"value,key"`
+				CompactValue  interface{} `aerospike:"value,key"`
 				Bucket int         `aerospike:"bucket,sliceKey=true,array=288"`
 				Count  int         `aerospike:"count
 		*/
@@ -1781,15 +1782,15 @@ func Test_QueryContext(t *testing.T) {
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM barDoublePtr",
-				"INSERT INTO barDoublePtr/Value(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
-				"INSERT INTO barDoublePtr/Value(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
+				"INSERT INTO barDoublePtr/CompactValue(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
+				"INSERT INTO barDoublePtr/CompactValue(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?)",
 			},
 			initParams: [][]interface{}{
 				{},
 				{},
 				{1, 2, 22, 2.25, "Time formatted stored as string", "2021-01-08T05:00:00Z"},
 			},
-			querySQL:    "SELECT * FROM barDoublePtr/Value WHERE PK IN (?) AND KEY IN (?,?)",
+			querySQL:    "SELECT * FROM barDoublePtr/CompactValue WHERE PK IN (?) AND KEY IN (?,?)",
 			queryParams: []interface{}{1, 1, 2},
 			expect: []interface{}{
 				&BarDoublePtr{Id: 1, Seq: 1, Amount: getIntDoublePtr(11), Price: getFloatDoublePtr(1.25), Name: getStringDoublePtr("Time formatted stored as string"), Time: getTimeDoublePtr(getTime("2021-01-06T05:00:00Z"))},
@@ -1939,7 +1940,7 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	//testCases = testCases[:1]
-	testCases = testCases[:1]
+	//testCases = testCases[:1]
 
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {
@@ -1947,7 +1948,7 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	//testCases = testCases[0:1]
+	testCases = testCases[0:1]
 
 	testCases.runTest(t)
 }
@@ -2028,7 +2029,14 @@ func (s tstCases) runTest(t *testing.T) {
 				}
 			}
 
-			assert.Equal(t, tc.expect, actual, tc.description)
+			if !assert.Equal(t, tc.expect, actual, tc.description) {
+				fmt.Println("************* EXPECTED")
+				toolbox.DumpIndent(tc.expect, false)
+
+				fmt.Println("************* ACTUAL")
+				toolbox.DumpIndent(actual, false)
+
+			}
 		})
 		wg.Wait()
 	}
