@@ -128,6 +128,9 @@ func (s *Statement) handleTableInfo(ctx context.Context, keys []*as.Key, rows *R
 			if err != nil {
 				return nil, err
 			}
+			if aTag.Ignore {
+				continue
+			}
 			if aTag.Name == "" {
 				aTag.Name = aField.Name
 			}

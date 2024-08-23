@@ -21,6 +21,7 @@ type Tag struct {
 
 func (t *Tag) updateTagKey(key, value string) error {
 	var err error
+
 	switch strings.ToLower(key) {
 	case "-":
 		t.Ignore = true
@@ -78,7 +79,11 @@ func ParseTag(tagString string) (*Tag, error) {
 	tag := &Tag{}
 	values := tags.Values(tagString)
 	name, values := values.Name()
-	tag.Name = name
+	if name == "-" {
+		tag.Ignore = true
+	} else {
+		tag.Name = name
+	}
 	err := values.MatchPairs(tag.updateTagKey)
 	return tag, err
 }
