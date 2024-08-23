@@ -251,18 +251,21 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 		if err != nil {
 			return handleNotFoundError(err, rows)
 		}
-		values, _ := result.Bins[s.collectionBin]
-		var records []interface{}
-		if values != nil {
-			switch {
-			case len(s.mapKeyValues) == 1:
-				records = []interface{}{values}
-			default:
-				records, _ = values.([]interface{})
-			}
+		values, ok := result.Bins[s.collectionBin]
+		if !ok {
+			rows.rowsReader = newRowsReader([]*as.Record{})
+			return rows, nil
 		}
-		//THIS IS BROKEN fix me !!!
-		rows.rowsReader = newInterfaceReader(records)
+		pairs, ok := values.([]as.MapPair)
+		if !ok {
+			rows.rowsReader = newRowsReader([]*as.Record{})
+			return rows, nil
+		}
+		recs, verr := s.convertMapPairsToRecords(pairs)
+		if verr != nil {
+			return nil, verr
+		}
+		rows.rowsReader = newRowsReader(recs)
 		return rows, nil
 	}
 	record, err := s.client.Get(as.NewPolicy(), keys[0], s.mapper.pk[0].Column(), s.collectionBin)
@@ -365,6 +368,25 @@ func (s *Statement) convertMapSlicePairsToRecords(keys []*as.Key, pairs []as.Map
 	return records, nil
 }
 
+func (s *Statement) convertMapPairsToRecords(pairs []as.MapPair) ([]*as.Record, error) {
+	var records []*as.Record
+
+	for _, pair := range pairs {
+		items, ok := pair.Value.(map[interface{}]interface{})
+		if !ok {
+			return nil, fmt.Errorf("unable to convert map pairs to records - unsupported type: %T, expected: %T", pair.Value, items)
+		}
+		record := &as.Record{Bins: map[string]interface{}{}}
+		for k, value := range items {
+			key := k.(string)
+			record.Bins[key] = value
+		}
+
+		records = append(records, record)
+	}
+	return records, nil
+}
+
 func handleNotFoundError(err error, rows *Rows) (driver.Rows, error) {
 	if IsKeyNotFound(err) {
 		rows.rowsReader = newRowsReader([]*as.Record{})
@@ -408,15 +430,10 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 				op = append(op, as.ListGetOp(s.collectionBin, s.arrayIndexValues[j]))
 			}
 		}
-	}
-	if len(op) > 0 {
+
 		result, err := s.client.Operate(nil, keys[0], op...)
 		if err != nil {
-			if IsKeyNotFound(err) {
-				rows.rowsReader = newRowsReader([]*as.Record{})
-				return rows, nil
-			}
-			return nil, err
+			return handleNotFoundError(err, rows)
 		}
 
 		rawValues, ok := result.Bins[s.collectionBin]

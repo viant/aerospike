@@ -509,7 +509,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type BazUnixPtr struct {
 		Id   int        `aerospike:"id,pk=true"`
-		Seq  int        `aerospike:"seq,arrayIndex=true" `
+		Seq  int        `aerospike:"seq,keyMap" `
 		Name string     `aerospike:"name"`
 		Time *time.Time `aerospike:"time,unixsec"`
 	}
@@ -523,7 +523,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type Qux struct {
 		Id    int      `aerospike:"id,pk=true"`
-		Seq   int      `aerospike:"seq,arrayIndex=true"`
+		Seq   int      `aerospike:"seq,array"` //TODO
 		Name  string   `aerospike:"name"`
 		List  []string `aerospike:"list"`
 		Slice []string `aerospike:"slice"`
@@ -541,7 +541,7 @@ func Test_QueryContext(t *testing.T) {
 	}
 	type Agg struct {
 		Id     int `aerospike:"id,pk=true" `
-		Seq    int `aerospike:"seq,arrayIndex=true" `
+		Seq    int `aerospike:"seq,mapKey" `
 		Amount int `aerospike:"amount" `
 		Val    int `aerospike:"val" `
 	}
@@ -617,7 +617,6 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = tstCases{
-
 		{
 			description: "map array with key filter and index range ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
