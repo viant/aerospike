@@ -48,7 +48,7 @@ func (t *Tag) updateTagKey(key, value string) error {
 				return err
 			}
 		}
-	case "secondaryindex":
+	case "index":
 		if value == "" {
 			t.IsSecondaryIndex = true
 		} else {
