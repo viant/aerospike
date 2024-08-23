@@ -476,33 +476,33 @@ func Test_QueryContext(t *testing.T) {
 
 	type Message struct {
 		Id   int    `aerospike:"id,pk=true" `
-		Seq  int    `aerospike:"seq,arrayIndex=true" `
+		Seq  int    `aerospike:"seq,arrayIndex" `
 		Body string `aerospike:"body"`
 	}
 	type Baz struct {
 		Id   int       `aerospike:"id,pk=true"`
-		Seq  int       `aerospike:"seq,arrayIndex=true" `
+		Seq  int       `aerospike:"seq,arrayIndex" `
 		Name string    `aerospike:"name"`
 		Time time.Time `aerospike:"time"`
 	}
 
 	type BazPtr struct {
 		Id   int        `aerospike:"id,pk=true"`
-		Seq  int        `aerospike:"seq,arrayIndex=true" `
+		Seq  int        `aerospike:"seq,arrayIndex" `
 		Name string     `aerospike:"name"`
 		Time *time.Time `aerospike:"time"`
 	}
 
 	type BazDoublePtr struct {
 		Id   int         `aerospike:"id,pk=true"`
-		Seq  int         `aerospike:"seq,arrayIndex=true" `
+		Seq  int         `aerospike:"seq,arrayIndex" `
 		Name string      `aerospike:"name"`
 		Time **time.Time `aerospike:"time"`
 	}
 
 	type BazUnix struct {
 		Id   int       `aerospike:"id,pk=true"`
-		Seq  int       `aerospike:"seq,arrayIndex=true" `
+		Seq  int       `aerospike:"seq,arrayIndex" `
 		Name string    `aerospike:"name"`
 		Time time.Time `aerospike:"time,unixsec"`
 	}
@@ -516,7 +516,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type BazUnixDoublePtr struct {
 		Id   int         `aerospike:"id,pk=true"`
-		Seq  int         `aerospike:"seq,arrayIndex=true" `
+		Seq  int         `aerospike:"seq,arrayIndex" `
 		Name string      `aerospike:"name"`
 		Time **time.Time `aerospike:"time,unixsec"`
 	}
@@ -531,7 +531,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type Doc struct {
 		Id   int    `aerospike:"id,pk=true" `
-		Seq  int    `aerospike:"seq,arrayIndex=true" `
+		Seq  int    `aerospike:"seq,arrayIndex" `
 		Name string `aerospike:"name" `
 	}
 
@@ -559,7 +559,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type Bar struct {
 		Id     int       `aerospike:"id,pk=true"`
-		Seq    int       `aerospike:"seq,arrayIndex=true"`
+		Seq    int       `aerospike:"seq,arrayIndex"`
 		Amount int       `aerospike:"amount"`
 		Price  float64   `aerospike:"price"`
 		Name   string    `aerospike:"name"`
@@ -568,7 +568,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type BarPtr struct {
 		Id     int        `aerospike:"id,pk=true"`
-		Seq    int        `aerospike:"seq,arrayIndex=true"`
+		Seq    int        `aerospike:"seq,arrayIndex"`
 		Amount *int       `aerospike:"amount"`
 		Price  *float64   `aerospike:"price"`
 		Name   *string    `aerospike:"name"`
@@ -577,7 +577,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type BarDoublePtr struct {
 		Id     int         `aerospike:"id,pk=true"`
-		Seq    int         `aerospike:"seq,arrayIndex=true"`
+		Seq    int         `aerospike:"seq,arrayIndex"`
 		Amount **int       `aerospike:"amount"`
 		Price  **float64   `aerospike:"price"`
 		Name   **string    `aerospike:"name"`
@@ -594,7 +594,7 @@ func Test_QueryContext(t *testing.T) {
 	var sets = []*parameterizedQuery{
 		{SQL: "REGISTER SET Signal AS ?", params: []interface{}{Signal{}}},
 		{SQL: "REGISTER SET Agg/Values AS ?", params: []interface{}{Agg{}}},
-		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,arrayIndex=true\"`;  Name string}"},
+		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,arrayIndex\"`;  Name string}"},
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
 		{SQL: "REGISTER SET Baz AS ?", params: []interface{}{Baz{}}},
 		{SQL: "REGISTER SET SimpleAgg AS ?", params: []interface{}{SimpleAgg{}}},
@@ -609,7 +609,7 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET users AS ?", params: []interface{}{User{}}},
 		{SQL: "REGISTER SET bar AS ?", params: []interface{}{Bar{}}},
 		{SQL: "REGISTER SET barPtr AS ?", params: []interface{}{BarPtr{}}},
-		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,arrayIndex=true\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
+		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,arrayIndex\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
 	}
 
 	type CountRec struct {
