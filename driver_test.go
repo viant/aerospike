@@ -1993,7 +1993,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 	}
 
-	testCases = testCases[:1]
+	//testCases = testCases[:1]
 	//testCases = testCases[:1]
 
 	for _, tc := range testCases {
@@ -2002,7 +2002,7 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	testCases = testCases[0:1]
+	//testCases = testCases[0:1]
 
 	testCases.runTest(t)
 }
