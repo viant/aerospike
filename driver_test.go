@@ -833,7 +833,7 @@ func Test_QueryContext(t *testing.T) {
 			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message"},
 
-			querySQL:    "SELECT id,seq,body FROM Msg/Items WHERE PK = ? AND KEY IN(?,?)",
+			querySQL:    "SELECT id,seq,body FROM Msg/Items WHERE PK = ? AND index IN(?,?)",
 			queryParams: []interface{}{1, 0, 2},
 			init: []string{
 				"DELETE FROM Msg",

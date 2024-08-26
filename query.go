@@ -387,6 +387,26 @@ func (s *Statement) convertMapPairsToRecords(pairs []as.MapPair) ([]*as.Record, 
 	return records, nil
 }
 
+func (s *Statement) convertSliceOfInterfacesToRecords(values []interface{}) ([]*as.Record, error) {
+	var records []*as.Record
+
+	for j, value := range values {
+		if value == nil {
+			continue
+		}
+		properties := value.(map[interface{}]interface{})
+		aRecord := &as.Record{Bins: map[string]interface{}{}}
+		for k, v := range properties {
+			aRecord.Bins[k.(string)] = v
+		}
+		aRecord.Bins[s.mapper.arrayIndex.Column()] = s.arrayIndexValues[j]
+		aRecord.Bins[s.mapper.pk[0].Column()] = s.pkValues[0]
+		records = append(records, aRecord)
+	}
+
+	return records, nil
+}
+
 func handleNotFoundError(err error, rows *Rows) (driver.Rows, error) {
 	if IsKeyNotFound(err) {
 		rows.rowsReader = newRowsReader([]*as.Record{})
@@ -430,36 +450,34 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 				op = append(op, as.ListGetOp(s.collectionBin, s.arrayIndexValues[j]))
 			}
 		}
+	}
 
+	if len(op) > 0 {
 		result, err := s.client.Operate(nil, keys[0], op...)
 		if err != nil {
 			return handleNotFoundError(err, rows)
 		}
 
 		rawValues, ok := result.Bins[s.collectionBin]
+		if !ok {
+			rows.rowsReader = newRowsReader([]*as.Record{})
+			return rows, nil
+		}
+
 		if funcColumn != "" {
 			rows.rowsReader = newRowsReader([]*as.Record{{Bins: map[string]interface{}{funcColumn: rawValues}}})
 			return rows, nil
 		}
-		var values []interface{}
-		if ok {
-			values = rawValues.([]interface{})
+
+		values, ok := rawValues.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("unable to convert rawValues to records - unsupported type: %T, expected: %T", rawValues, values)
 		}
-		var records []*as.Record
-		for j, value := range values {
-			if value == nil {
-				continue
-			}
-			properties := value.(map[interface{}]interface{})
-			aRecord := &as.Record{Bins: map[string]interface{}{}}
-			for k, v := range properties {
-				aRecord.Bins[k.(string)] = v
-			}
-			aRecord.Bins[s.mapper.mapKey[0].Column()] = s.arrayIndexValues[j]
-			aRecord.Bins[s.mapper.pk[0].Column()] = s.pkValues[0]
-			records = append(records, aRecord)
+
+		records, err2 := s.convertSliceOfInterfacesToRecords(values)
+		if err2 != nil {
+			return nil, err2
 		}
-		//THIS IS BROKEN fix me !!!
 		rows.rowsReader = newRowsReader(records)
 		return rows, nil
 	}
