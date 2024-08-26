@@ -104,16 +104,15 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 		for key, value := range putBins {
 			operates = append(operates, as.MapPutOp(mapPolicy, s.collectionBin, key, value, binKey))
 		}
-	} else if s.collectionType.IsArray() {
+	} else if s.collectionType.IsArray() || s.collectionType == "" {
 		for key, value := range addBins {
 			operates = append(operates, as.AddOp(as.NewBin(key, value)))
 		}
-
 		for key, value := range subBins {
-			operates = append(operates, as.AddOp(as.NewBin(key, value)))
+			operates = append(operates, as.AddOp(as.NewBin(key, negate(value))))
 		}
 		for key, value := range putBins {
-			operates = append(operates, as.PutOp(as.NewBin(key, negate(value))))
+			operates = append(operates, as.PutOp(as.NewBin(key, value)))
 		}
 	}
 

@@ -1029,6 +1029,26 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
+			description: "update bin with dec ",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "UPDATE SimpleAgg SET amount = amount - ?  WHERE PK = ?",
+			execParams:  []interface{}{2, 1},
+			querySQL:    "SELECT id, amount FROM SimpleAgg WHERE PK = ?",
+			queryParams: []interface{}{1},
+			init: []string{
+				"DELETE FROM SimpleAgg",
+				"INSERT INTO SimpleAgg(id,amount) VALUES(1,10)",
+			},
+			expect: []interface{}{
+				&SimpleAgg{Id: 1, Amount: 8},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := SimpleAgg{}
+				err := r.Scan(&agg.Id, &agg.Amount)
+				return &agg, err
+			},
+		},
+		{
 			description: "update with inc ",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "UPDATE SimpleAgg SET amount = amount + ?  WHERE PK = ?",
@@ -1041,6 +1061,26 @@ func Test_QueryContext(t *testing.T) {
 			},
 			expect: []interface{}{
 				&SimpleAgg{Id: 1, Amount: 11},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := SimpleAgg{}
+				err := r.Scan(&agg.Id, &agg.Amount)
+				return &agg, err
+			},
+		},
+		{
+			description: "update with dec ",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "UPDATE SimpleAgg SET amount = amount - ?  WHERE PK = ?",
+			execParams:  []interface{}{2, 1},
+			querySQL:    "SELECT id, amount FROM SimpleAgg WHERE PK = ?",
+			queryParams: []interface{}{1},
+			init: []string{
+				"DELETE FROM SimpleAgg",
+				"INSERT INTO SimpleAgg(id,amount) VALUES(1,10)",
+			},
+			expect: []interface{}{
+				&SimpleAgg{Id: 1, Amount: 8},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				agg := SimpleAgg{}
