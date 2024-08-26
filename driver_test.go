@@ -476,54 +476,54 @@ func Test_QueryContext(t *testing.T) {
 
 	type Message struct {
 		Id   int    `aerospike:"id,pk=true" `
-		Seq  int    `aerospike:"seq,arrayIndex" `
+		Seq  int    `aerospike:"seq,arrayindex" `
 		Body string `aerospike:"body"`
 	}
 	type Baz struct {
 		Id   int       `aerospike:"id,pk=true"`
-		Seq  int       `aerospike:"seq,arrayIndex" `
+		Seq  int       `aerospike:"seq,mapKey" `
 		Name string    `aerospike:"name"`
 		Time time.Time `aerospike:"time"`
 	}
 
 	type BazPtr struct {
 		Id   int        `aerospike:"id,pk=true"`
-		Seq  int        `aerospike:"seq,arrayIndex" `
+		Seq  int        `aerospike:"seq,mapKey" `
 		Name string     `aerospike:"name"`
 		Time *time.Time `aerospike:"time"`
 	}
 
 	type BazDoublePtr struct {
 		Id   int         `aerospike:"id,pk=true"`
-		Seq  int         `aerospike:"seq,arrayIndex" `
+		Seq  int         `aerospike:"seq,mapKey" `
 		Name string      `aerospike:"name"`
 		Time **time.Time `aerospike:"time"`
 	}
 
 	type BazUnix struct {
 		Id   int       `aerospike:"id,pk=true"`
-		Seq  int       `aerospike:"seq,arrayIndex" `
+		Seq  int       `aerospike:"seq,mapKey" `
 		Name string    `aerospike:"name"`
 		Time time.Time `aerospike:"time,unixsec"`
 	}
 
 	type BazUnixPtr struct {
 		Id   int        `aerospike:"id,pk=true"`
-		Seq  int        `aerospike:"seq,keyMap" `
+		Seq  int        `aerospike:"seq,mapKey" `
 		Name string     `aerospike:"name"`
 		Time *time.Time `aerospike:"time,unixsec"`
 	}
 
 	type BazUnixDoublePtr struct {
 		Id   int         `aerospike:"id,pk=true"`
-		Seq  int         `aerospike:"seq,arrayIndex" `
+		Seq  int         `aerospike:"seq,mapKey" `
 		Name string      `aerospike:"name"`
 		Time **time.Time `aerospike:"time,unixsec"`
 	}
 
 	type Qux struct {
 		Id    int      `aerospike:"id,pk=true"`
-		Seq   int      `aerospike:"seq,array"` //TODO
+		Seq   int      `aerospike:"seq,mapKey"`
 		Name  string   `aerospike:"name"`
 		List  []string `aerospike:"list"`
 		Slice []string `aerospike:"slice"`
@@ -531,7 +531,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type Doc struct {
 		Id   int    `aerospike:"id,pk=true" `
-		Seq  int    `aerospike:"seq,arrayIndex" `
+		Seq  int    `aerospike:"seq,mapKey" `
 		Name string `aerospike:"name" `
 	}
 
@@ -559,7 +559,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type Bar struct {
 		Id     int       `aerospike:"id,pk=true"`
-		Seq    int       `aerospike:"seq,arrayIndex"`
+		Seq    int       `aerospike:"seq,mapKey"`
 		Amount int       `aerospike:"amount"`
 		Price  float64   `aerospike:"price"`
 		Name   string    `aerospike:"name"`
@@ -568,7 +568,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type BarPtr struct {
 		Id     int        `aerospike:"id,pk=true"`
-		Seq    int        `aerospike:"seq,arrayIndex"`
+		Seq    int        `aerospike:"seq,mapKey"`
 		Amount *int       `aerospike:"amount"`
 		Price  *float64   `aerospike:"price"`
 		Name   *string    `aerospike:"name"`
@@ -577,7 +577,7 @@ func Test_QueryContext(t *testing.T) {
 
 	type BarDoublePtr struct {
 		Id     int         `aerospike:"id,pk=true"`
-		Seq    int         `aerospike:"seq,arrayIndex"`
+		Seq    int         `aerospike:"seq,mapKey"`
 		Amount **int       `aerospike:"amount"`
 		Price  **float64   `aerospike:"price"`
 		Name   **string    `aerospike:"name"`
@@ -594,7 +594,7 @@ func Test_QueryContext(t *testing.T) {
 	var sets = []*parameterizedQuery{
 		{SQL: "REGISTER SET Signal AS ?", params: []interface{}{Signal{}}},
 		{SQL: "REGISTER SET Agg/Values AS ?", params: []interface{}{Agg{}}},
-		{SQL: "REGISTER SET Doc AS struct{Id int; Seq int `aerospike:\"seq,arrayIndex\"`;  Name string}"},
+		{SQL: "REGISTER SET Doc AS ?", params: []interface{}{Doc{}}},
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
 		{SQL: "REGISTER SET Baz AS ?", params: []interface{}{Baz{}}},
 		{SQL: "REGISTER SET SimpleAgg AS ?", params: []interface{}{SimpleAgg{}}},
@@ -609,7 +609,7 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET users AS ?", params: []interface{}{User{}}},
 		{SQL: "REGISTER SET bar AS ?", params: []interface{}{Bar{}}},
 		{SQL: "REGISTER SET barPtr AS ?", params: []interface{}{BarPtr{}}},
-		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,arrayIndex\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
+		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,mapKey\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
 	}
 
 	type CountRec struct {
@@ -618,7 +618,7 @@ func Test_QueryContext(t *testing.T) {
 
 	var testCases = tstCases{
 		{
-			description: "map array with key filter and index range ",
+			description: "map array with key filter and index range",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			//querySQL:    "SELECT id,value,bucket,count FROM Signal WHERE pk = ?",
 			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal/Values WHERE id = ? AND keyValue = ?  AND bucket between ? and ?",
@@ -1089,7 +1089,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 1 bin map value by arrayIndex",
+			description: "get 1 record by PK with 1 bin map value by key",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
@@ -1278,7 +1278,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 2 bin map values by arrayIndex and between operator",
+			description: "get 1 record by PK with 2 bin map values by mapKey and between operator",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
@@ -1301,7 +1301,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 1 bin map values by arrayIndex and between operator",
+			description: "get 1 record by PK with 1 bin map values by mapKey and between operator",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
@@ -1321,7 +1321,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 0 bin map values by arrayIndex and between operator",
+			description: "get 1 record by PK with 0 bin map values by mapKey and between operator",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
@@ -1339,7 +1339,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 0 records by PK with 0 bin map values by arrayIndex and between operator",
+			description: "get 0 records by PK with 0 bin map values by mapKey and between operator",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
@@ -1357,7 +1357,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 1 bin map values by arrayIndex",
+			description: "get 1 record by PK with 1 bin map values by mapKey",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
@@ -1377,7 +1377,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 0 bin map values by arrayIndex",
+			description: "get 1 record by PK with 0 bin map values by mapKey",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
@@ -1395,7 +1395,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 0 record by PK with 0 bin map values by arrayIndex",
+			description: "get 0 record by PK with 0 bin map values by mapKey",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
@@ -1413,7 +1413,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 2 bin map values by arrayIndex list",
+			description: "get 1 record by PK with 2 bin map values by mapKey list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
@@ -1435,7 +1435,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 1 bin map values by arrayIndex list",
+			description: "get 1 record by PK with 1 bin map values by mapKey list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
@@ -1455,7 +1455,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 0 bin map values by arrayIndex list",
+			description: "get 1 record by PK with 0 bin map values by mapKey list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
@@ -1473,7 +1473,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 0 record by PK with 0 bin map values by arrayIndex list",
+			description: "get 0 record by PK with 0 bin map values by mapKey list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
@@ -1492,7 +1492,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 
 		{
-			description: "get 1 record by PK with 1 bin map value by arrayIndex with string list",
+			description: "get 1 record by PK with 1 bin map value by mapKey with string list",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM Qux",
@@ -1540,7 +1540,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 record by PK with 2 bin map values by arrayIndex - with time value stored as string",
+			description: "get 1 record by PK with 2 bin map values by mapKey - with time value stored as string",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM Baz",
@@ -1591,7 +1591,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "get 1 records by PK with 2 bin map values by arrayIndex - with time value stored as int",
+			description: "get 1 records by PK with 2 bin map values by mapKey - with time value stored as int",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"DELETE FROM BazUnix",
@@ -1921,7 +1921,7 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "aggregate with duplicated pk and arrayIndex in one batch",
+			description: "aggregate with duplicated pk and mapKey in one batch",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
 				"TRUNCATE TABLE bar",

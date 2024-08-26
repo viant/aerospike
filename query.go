@@ -175,10 +175,10 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	default:
 		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		recs := make([]*as.Record, 0)
-		if s.collectionBin != "" {
+		if s.collectionType.IsMap() {
 			for i := range records {
 				if records[i] != nil {
-					e := s.handleBinResult(records[i], &recs)
+					e := s.handleMapBinResult(records[i], &recs)
 					if e != nil {
 						return nil, err
 					}
@@ -273,7 +273,7 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 		return handleNotFoundError(err, rows)
 	}
 	records := make([]*as.Record, 0)
-	if err = s.handleBinResult(record, &records); err != nil {
+	if err = s.handleMapBinResult(record, &records); err != nil {
 		return nil, err
 	}
 	rows.rowsReader = newRowsReader(records)
@@ -504,8 +504,8 @@ func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record
 			for k, v := range properties {
 				itemRecord.Bins[k.(string)] = v
 			}
-			if _, ok := itemRecord.Bins[s.mapper.mapKey[0].Column()]; !ok {
-				itemRecord.Bins[s.mapper.mapKey[0].Column()] = index
+			if _, ok := itemRecord.Bins[s.mapper.arrayIndex.Column()]; !ok {
+				itemRecord.Bins[s.mapper.arrayIndex.Column()] = index
 			}
 			itemRecord.Bins[s.mapper.pk[0].Column()] = record.Key.Value()
 			*records = append(*records, itemRecord)
@@ -514,7 +514,7 @@ func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record
 	return nil
 }
 
-func (s *Statement) handleBinResult(record *as.Record, records *[]*as.Record) error {
+func (s *Statement) handleMapBinResult(record *as.Record, records *[]*as.Record) error {
 	if mapBin, ok := record.Bins[s.collectionBin]; ok {
 		mapBinMap, ok := mapBin.(map[interface{}]interface{})
 		if !ok {
