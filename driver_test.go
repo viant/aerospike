@@ -591,7 +591,15 @@ func Test_QueryContext(t *testing.T) {
 		Count    int         `aerospike:"count,component"`
 	}
 
+	type Signal2 struct {
+		ID       string      `aerospike:"id,pk=true"` //--> day,value
+		KeyValue interface{} `aerospike:"keyValue,mapKey"`
+		Bucket   int         `aerospike:"bucket,arrayIndex,arraySize=2"`
+		Count    int         `aerospike:"count,component"`
+	}
+
 	var sets = []*parameterizedQuery{
+		{SQL: "REGISTER SET Signal2 AS ?", params: []interface{}{Signal2{}}},
 		{SQL: "REGISTER SET Signal AS ?", params: []interface{}{Signal{}}},
 		{SQL: "REGISTER SET Agg/Values AS ?", params: []interface{}{Agg{}}},
 		{SQL: "REGISTER SET Doc AS ?", params: []interface{}{Doc{}}},
@@ -617,6 +625,78 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = tstCases{
+		{
+			description: "array batch merge",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal2/Values WHERE pk = ?",
+			queryParams: []interface{}{"1"},
+			init: []string{
+				"TRUNCATE TABLE Signal2 ",
+				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{
+					"1", "v1", 1, 1,
+					"1", "v2", 1, 2,
+				},
+			},
+			execSQL: "INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE count = count + new.count",
+			execParams: []interface{}{
+				"1", "v1", 0, 5,
+				"1", "v1", 1, 10,
+				"1", "v2", 1, 20,
+				"1", "v2", 1, 30},
+
+			expect: []interface{}{
+				&Signal2{ID: "1", KeyValue: "v1", Bucket: 0, Count: 5},
+				&Signal2{ID: "1", KeyValue: "v1", Bucket: 1, Count: 11},
+
+				&Signal2{ID: "1", KeyValue: "v2", Bucket: 0, Count: 0},
+				&Signal2{ID: "1", KeyValue: "v2", Bucket: 1, Count: 52},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := Signal2{}
+				err := r.Scan(&agg.ID, &agg.KeyValue, &agg.Bucket, &agg.Count)
+				return &agg, err
+			},
+		},
+		{
+			description: "array update by insert",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal2/Values WHERE pk = ?",
+			queryParams: []interface{}{"1"},
+			init: []string{
+				"TRUNCATE TABLE Signal2 ",
+				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{
+					"1", "v1", 1, 1,
+					"1", "v2", 1, 2,
+				},
+			},
+			execSQL: "INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?),(?,?,?,?)",
+			execParams: []interface{}{
+				"1", "v1", 0, 5,
+				"1", "v1", 1, 10,
+				"1", "v2", 1, 21,
+				"1", "v2", 1, 22},
+
+			expect: []interface{}{
+				&Signal2{ID: "1", KeyValue: "v1", Bucket: 0, Count: 5},
+				&Signal2{ID: "1", KeyValue: "v1", Bucket: 1, Count: 10},
+
+				&Signal2{ID: "1", KeyValue: "v2", Bucket: 0, Count: 0},
+				&Signal2{ID: "1", KeyValue: "v2", Bucket: 1, Count: 22},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := Signal2{}
+				err := r.Scan(&agg.ID, &agg.KeyValue, &agg.Bucket, &agg.Count)
+				return &agg, err
+			},
+		},
 		{
 			description: "map array with key filter and index range",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -2033,7 +2113,6 @@ func Test_QueryContext(t *testing.T) {
 		},
 	}
 
-	//testCases = testCases[:1]
 	//testCases = testCases[:1]
 
 	for _, tc := range testCases {
