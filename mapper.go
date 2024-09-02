@@ -177,6 +177,27 @@ func extractValue(value interface{}) (interface{}, error) {
 		}
 		tValue := *valuePtr
 		value = tValue.Format(time.RFC3339)
+	case *[]string:
+		if actual == nil {
+			value = nil
+		}
+		value = *actual
+	case *[]byte:
+		if actual == nil {
+			value = nil
+		}
+		value = *actual
+	case *[]int:
+		if actual == nil {
+			value = nil
+		}
+		value = *actual
+	case *time.Time:
+		if actual == nil {
+			value = nil
+		}
+		tValue := *actual
+		value = tValue.Format(time.RFC3339)
 	default:
 		return nil, fmt.Errorf("extractvalue - unsupported type %T", actual)
 	}
