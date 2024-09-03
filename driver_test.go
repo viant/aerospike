@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-var namespace = "test"
+var namespace = "udb"
 
 type (
 	testCase struct {
@@ -419,13 +419,6 @@ func Test_ExecContext(t *testing.T) {
 		params      []interface{}
 		expect      interface{}
 	}{
-		/// 0
-		{
-			description: "register inlined set",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			sql:         "REGISTER SET WITH TTL 259200 endpoint_qps AS struct { ID string `aerospike:\"id,pk=true\"` Value interface{} `aerospike:\"value,mapKey\"` Bucket int `aerospike:\"bucket,arrayIndex,arraySize=288\"` Count int `aerospike:\"count,component\"` At *time.Time `aerospike:\"-\"` }",
-		},
-		/// 0
 		{
 			description: "register inlined set",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -461,8 +454,8 @@ func Test_ExecContext(t *testing.T) {
 		},
 	}
 
-	//for _, tc := range testCase {
-	for _, tc := range testCase[0:1] {
+	for _, tc := range testCase {
+		//for _, tc := range testCase[0:1] {
 		t.Run(tc.description, func(t *testing.T) {
 			db, err := sql.Open("aerospike", tc.dsn)
 			if !assert.Nil(t, err, tc.description) {

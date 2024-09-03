@@ -239,7 +239,7 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 		if _, err = s.client.Operate(writePolicy, key, createOp...); err != nil {
 			return err
 		}
-		if _, _ = s.client.Operate(writePolicy, key, ops...); err != nil {
+		if _, err = s.client.Operate(writePolicy, key, ops...); err != nil {
 			return err
 		}
 	}
