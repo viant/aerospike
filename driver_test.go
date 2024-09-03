@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+var namespace = "udb"
+
 type (
 	testCase struct {
 		description        string
@@ -43,7 +45,6 @@ type (
 )
 
 func Test_Meta(t *testing.T) {
-	namespace := "test"
 	type catalog struct {
 		CatalogName  string
 		SchemaName   string
@@ -111,7 +112,7 @@ func Test_Meta(t *testing.T) {
 		   from information_schema.schemata`,
 			queryParams: []interface{}{},
 			expect: []interface{}{
-				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
+				&catalog{CatalogName: "", SchemaName: "udb", SQLPath: "", CharacterSet: "utf8", Collation: ""},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := catalog{}
@@ -130,10 +131,10 @@ schema_name,
 'utf8' default_character_set_name,
 '' as default_collation_name
 from information_schema.schemata
-where pk = 'test'`,
+where pk = '` + namespace + `'`,
 			queryParams: []interface{}{},
 			expect: []interface{}{
-				&catalog{CatalogName: "", SchemaName: "test", SQLPath: "", CharacterSet: "utf8", Collation: ""},
+				&catalog{CatalogName: "", SchemaName: namespace, SQLPath: "", CharacterSet: "utf8", Collation: ""},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := catalog{}
@@ -168,8 +169,8 @@ from information_schema.tables`,
 			queryParams:     []interface{}{},
 			justNActualRows: 2,
 			expect: []interface{}{
-				&table{TableCatalog: "", TableSchema: "test", TableName: "A01", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
-				&table{TableCatalog: "", TableSchema: "test", TableName: "A02", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
+				&table{TableCatalog: "", TableSchema: namespace, TableName: "A01", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
+				&table{TableCatalog: "", TableSchema: namespace, TableName: "A02", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := table{}
@@ -204,8 +205,8 @@ from information_schema.tables
 where pk in ('A02','A03')`,
 			queryParams: []interface{}{},
 			expect: []interface{}{
-				&table{TableCatalog: "", TableSchema: "test", TableName: "A02", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
-				&table{TableCatalog: "", TableSchema: "test", TableName: "A03", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
+				&table{TableCatalog: "", TableSchema: namespace, TableName: "A02", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
+				&table{TableCatalog: "", TableSchema: namespace, TableName: "A03", TableComment: "", TableType: "", AutoIncrement: "", CreateTime: "", UpdateTime: "", TableRows: 0, Version: "", Engine: "", DDL: ""},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := table{}
@@ -243,7 +244,7 @@ where pk in ('A02','A03')`,
 			expect: []interface{}{
 				&tableColumn{
 					TableCatalog:           "",
-					TableSchema:            "test",
+					TableSchema:            namespace,
 					TableName:              "A01",
 					ColumnName:             "Id",
 					OrdinalPosition:        0,
@@ -259,7 +260,7 @@ where pk in ('A02','A03')`,
 				},
 				&tableColumn{
 					TableCatalog:           "",
-					TableSchema:            "test",
+					TableSchema:            namespace,
 					TableName:              "A01",
 					ColumnName:             "Name",
 					OrdinalPosition:        1,
@@ -311,7 +312,7 @@ where pk in ('A02','A03')`,
 			expect: []interface{}{
 				&tableColumn{
 					TableCatalog:           "",
-					TableSchema:            "test",
+					TableSchema:            namespace,
 					TableName:              "A02",
 					ColumnName:             "Id",
 					OrdinalPosition:        0,
@@ -327,7 +328,7 @@ where pk in ('A02','A03')`,
 				},
 				&tableColumn{
 					TableCatalog:           "",
-					TableSchema:            "test",
+					TableSchema:            namespace,
 					TableName:              "A02",
 					ColumnName:             "Name",
 					OrdinalPosition:        1,
@@ -372,7 +373,7 @@ from information_schema.processlist`,
 					Username: "test_name",
 					Region:   "",
 					Catalog:  "",
-					Schema:   "test",
+					Schema:   namespace,
 					AppName:  "",
 				},
 			},
@@ -398,12 +399,13 @@ from information_schema.processlist`,
 		},
 	}
 
+	//testCases = testCases[0:1]
+
 	testCases.runTest(t)
 
 }
 
 func Test_ExecContext(t *testing.T) {
-	namespace := "test"
 
 	type Foo struct {
 		Id   int
@@ -417,7 +419,13 @@ func Test_ExecContext(t *testing.T) {
 		params      []interface{}
 		expect      interface{}
 	}{
-
+		/// 0
+		{
+			description: "register inlined set",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			sql:         "REGISTER SET WITH TTL 259200 endpoint_qps AS struct { ID string `aerospike:\"id,pk=true\"` Value interface{} `aerospike:\"value,mapKey\"` Bucket int `aerospike:\"bucket,arrayIndex,arraySize=288\"` Count int `aerospike:\"count,component\"` At *time.Time `aerospike:\"-\"` }",
+		},
+		/// 0
 		{
 			description: "register inlined set",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -453,8 +461,8 @@ func Test_ExecContext(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCase {
-		//for _, tc := range testCase[0:1] {
+	//for _, tc := range testCase {
+	for _, tc := range testCase[0:1] {
 		t.Run(tc.description, func(t *testing.T) {
 			db, err := sql.Open("aerospike", tc.dsn)
 			if !assert.Nil(t, err, tc.description) {
@@ -468,7 +476,6 @@ func Test_ExecContext(t *testing.T) {
 }
 
 func Test_QueryContext(t *testing.T) {
-	namespace := "test"
 	type Foo struct {
 		Id   int
 		Name string
@@ -625,6 +632,44 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = tstCases{
+		/// 00
+		{
+			description: "array batch merge",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal2/Values WHERE pk = ?",
+			queryParams: []interface{}{"1"},
+			init: []string{
+				"TRUNCATE TABLE Signal2 ",
+				//"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				//{
+				//	"1", 1, 1, 1,
+				//	"1", 2, 1, 2,
+				//},
+			},
+			execSQL: "INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE count = count + new.count",
+			execParams: []interface{}{
+				"1", 1, 0, 5,
+				"1", 1, 1, 10,
+				"1", 2, 1, 20,
+				"1", 2, 1, 30},
+
+			expect: []interface{}{
+				&Signal2{ID: "1", KeyValue: 1, Bucket: 0, Count: 5},
+				&Signal2{ID: "1", KeyValue: 1, Bucket: 1, Count: 11},
+
+				&Signal2{ID: "1", KeyValue: 2, Bucket: 0, Count: 0},
+				&Signal2{ID: "1", KeyValue: 2, Bucket: 1, Count: 52},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := Signal2{}
+				err := r.Scan(&agg.ID, &agg.KeyValue, &agg.Bucket, &agg.Count)
+				return &agg, err
+			},
+		},
+		///
 		{
 			description: "array batch merge",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -2121,7 +2166,7 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	//testCases = testCases[0:1]
+	testCases = testCases[0:1]
 
 	testCases.runTest(t)
 }

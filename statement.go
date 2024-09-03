@@ -187,7 +187,7 @@ func checkQueryParameters(query string) int {
 func (s *Statement) handleRegisterSet(args []driver.NamedValue) (driver.Result, error) {
 	register, err := sqlparser.ParseRegisterSet(s.SQL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to parse set definition: %s due to: %w", s.SQL, err)
 	}
 	spec := strings.TrimSpace(register.Spec)
 	var rType reflect.Type
@@ -199,7 +199,7 @@ func (s *Statement) handleRegisterSet(args []driver.NamedValue) (driver.Result, 
 	} else {
 		aType := xreflect.NewType(register.Name, xreflect.WithTypeDefinition(spec))
 		if rType, err = aType.LoadType(xreflect.NewTypes()); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to register set %s and spec %s due to: %w", register.Name, spec, err)
 		}
 	}
 	aSet := &set{

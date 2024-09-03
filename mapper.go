@@ -45,6 +45,9 @@ type (
 )
 
 func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
+	if iFacePtr, ok := value.(*interface{}); ok && iFacePtr != nil {
+		value = *iFacePtr
+	}
 	valueType := reflect.TypeOf(value)
 	if valueType == nil {
 		valueType = f.Type
@@ -82,6 +85,7 @@ func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 	}
 
 	if valueType.AssignableTo(f.Type) {
+
 		value = reflect.ValueOf(value).Convert(f.Type).Interface()
 	} else {
 		// TODO add extra converson logic
@@ -198,6 +202,11 @@ func extractValue(value interface{}) (interface{}, error) {
 		}
 		tValue := *actual
 		value = tValue.Format(time.RFC3339)
+	case *interface{}:
+		if actual == nil {
+			value = nil
+		}
+		value = *actual
 	default:
 		return nil, fmt.Errorf("extractvalue - unsupported type %T", actual)
 	}
