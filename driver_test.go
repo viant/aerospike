@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-var namespace = "udb"
+var namespace = "test"
 
 type (
 	testCase struct {
@@ -632,7 +632,7 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = tstCases{
-		/// 00
+		/// // "1" | MAP('{1:{"count":[0, 0]}, 2:{"count":[0, 0]}}')
 		{
 			description: "array batch merge",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -640,14 +640,14 @@ func Test_QueryContext(t *testing.T) {
 			queryParams: []interface{}{"1"},
 			init: []string{
 				"TRUNCATE TABLE Signal2 ",
-				//"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
+				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
 			},
 			initParams: [][]interface{}{
 				{},
-				//{
-				//	"1", 1, 1, 1,
-				//	"1", 2, 1, 2,
-				//},
+				{
+					"1", 1, 1, 1,
+					"1", 2, 1, 2,
+				},
 			},
 			execSQL: "INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE count = count + new.count",
 			execParams: []interface{}{
@@ -2166,7 +2166,7 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	testCases = testCases[0:1]
+	//testCases = testCases[0:1]
 
 	testCases.runTest(t)
 }

@@ -6,7 +6,6 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
-	"github.com/viant/toolbox"
 	"sync"
 )
 
@@ -80,7 +79,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 			var values = make(map[interface{}]interface{}, len(group))
 			if s.mapper.component != nil {
 				if err := s.ensureMapOfSlice(group, key); err != nil {
-					return fmt.Errorf("failed to ensure component slice: %s", err)
+					return err
 				}
 				for k, v := range group {
 					indexLiteral, ok := v[s.mapper.arrayIndex.Column()]
@@ -122,7 +121,6 @@ func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]inter
 	}
 	newEntryPolicy := as.NewMapPolicyWithFlags(as.MapOrder.UNORDERED, as.MapWriteFlagsCreateOnly|as.MapWriteFlagsNoFail)
 	var ops []*as.Operation
-
 	var values = map[interface{}]interface{}{}
 	for mapKey, _ := range group {
 		values[mapKey] = s.mapper.newSlice()
@@ -181,9 +179,7 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 			mapKey := as.CtxMapKey(as.NewValue(groupKey))
 			createOnly := as.NewMapPolicyWithFlags(as.MapOrder.UNORDERED, as.MapWriteFlagsCreateOnly|as.MapWriteFlagsNoFail)
 			if s.mapper.component != nil {
-				createOp = append(createOp, as.MapPutOp(createOnly, s.collectionBin, groupKey, map[interface{}]interface{}{
-					s.mapper.component.Column(): slice,
-				}))
+				createOp = append(createOp, as.MapPutOp(createOnly, s.collectionBin, groupKey, slice))
 			} else {
 				createOp = append(createOp, as.MapPutOp(createOnly, s.collectionBin, groupKey, map[interface{}]interface{}{}))
 			}
@@ -199,8 +195,6 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 
 				if addColumn[s.mapper.component.Column()] {
 					ops = append(ops, as.ListIncrementOp(s.collectionBin, idx, as.NewValue(componentValue), key))
-					fmt.Printf("merge list inc: %v %v %v %v\n", s.collectionBin, idx, componentValue, key)
-
 				} else if subColumn[s.mapper.component.Column()] {
 					switch actual := componentValue.(type) {
 					case int64:
@@ -211,11 +205,7 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 						componentValue = -actual
 					}
 					ops = append(ops, as.ListIncrementOp(s.collectionBin, idx, as.NewValue(componentValue), key))
-					fmt.Printf("merge list dec: %v %v %v %v\n", s.collectionBin, idx, componentValue, key)
-
 				} else {
-					fmt.Printf("merge set : %v %v %v\n", idx, componentValue, key)
-
 					ops = append(ops, as.ListSetOp(s.collectionBin, idx, as.NewValue(componentValue), key))
 				}
 
@@ -246,12 +236,10 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 		}
 		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
 		writePolicy.SendKey = true
-		_, err = s.client.Operate(writePolicy, key, createOp...)
-		fmt.Printf("init err: %v\n", err)
-		if _, err := s.client.Operate(writePolicy, key, ops...); err != nil {
-			aMap := map[string]interface{}{}
-			toolbox.DefaultConverter.AssignConverted(&aMap, err)
-			fmt.Printf("failed to operate %v  %v", aMap, err)
+		if _, err = s.client.Operate(writePolicy, key, createOp...); err != nil {
+			return err
+		}
+		if _, _ = s.client.Operate(writePolicy, key, ops...); err != nil {
 			return err
 		}
 	}
@@ -424,11 +412,9 @@ func (s *Statement) handleMerge(bins map[string]interface{}, writePolicy *as.Wri
 	for column, value := range bins {
 		if addColumn[column] {
 			ops = append(ops, as.AddOp(as.NewBin(column, value)))
-			fmt.Printf("mergeincrementing  %v: %v\n", column, value)
 		} else if subColumn[column] {
 			ops = append(ops, as.AddOp(as.NewBin(column, negate(value))))
 		} else {
-			fmt.Printf("merge put  %v: %v\n", column, value)
 			ops = append(ops, as.PutOp(as.NewBin(column, value)))
 		}
 	}
