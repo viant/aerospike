@@ -82,7 +82,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 
 	aMapper := aSet.lookupQueryMapper(s.SQL)
 	if aMapper == nil {
-		aMapper, err = newQueryMapper(s.recordType, s.query.List, aSet.typeBasedMapper)
+		aMapper, err = newQueryMapper(s.recordType, s.query, aSet.typeBasedMapper)
 		if err != nil {
 			return nil, err
 		}
@@ -173,6 +173,15 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		}
 		rows.rowsReader = newRowsReader([]*as.Record{record})
 	default:
+
+		if len(aMapper.aggregateColumn) > 0 {
+			err = s.handleGroupBy(rows, keys)
+			if err != nil {
+				return nil, err
+			}
+			return rows, nil
+		}
+
 		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
 		recs := make([]*as.Record, 0)
 		if s.collectionType.IsMap() {
@@ -215,6 +224,51 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		}
 	}
 	return rows, nil
+}
+
+func (s *Statement) handleGroupBy(rows *Rows, keys []*as.Key) error {
+	var records []*as.Record
+	var aggColumn string
+	var err error
+	for _, key := range keys {
+		var operations []*as.Operation
+		aggColumn, err = s.getAggregateOperation(rows, &operations)
+		if err != nil {
+			return err
+		}
+		result, err := s.client.Operate(nil, key, operations...)
+		if err != nil {
+			if IsKeyNotFound(err) {
+				break
+			}
+			return err
+		}
+		records = append(records, &as.Record{Key: key, Bins: map[string]interface{}{
+			s.mapper.pk[0].Column(): key.Value(),
+			aggColumn:               result.Bins[s.collectionBin],
+		}})
+	}
+	rows.rowsReader = newRowsReader(records)
+	return nil
+}
+
+func (s *Statement) getAggregateOperation(rows *Rows, operations *[]*as.Operation) (string, error) {
+	funcColumn := ""
+	for col, call := range rows.mapper.aggregateColumn {
+		if funcColumn != "" {
+			return "", fmt.Errorf("unsupported multiple aggregation functions: %s", sqlparser.Stringify(call))
+		}
+		fName := sqlparser.Stringify(call.X)
+		switch strings.ToLower(fName) {
+		case "count":
+			*operations = append(*operations, as.ListSizeOp(s.collectionBin))
+			funcColumn = col
+		default:
+			return "", fmt.Errorf("unsupported aggregation function: %s", fName)
+		}
+		funcColumn = col
+	}
+	return funcColumn, nil
 }
 
 func (s *Statement) lookupSet() (*set, error) {
@@ -417,43 +471,30 @@ func handleNotFoundError(err error, rows *Rows) (driver.Rows, error) {
 
 func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, error) {
 	var err error
-	var funcColumn string
-	var op []*as.Operation
+
+	var operations []*as.Operation
+	var aggColumn string
 	if len(rows.mapper.aggregateColumn) > 0 { //for only one  aggregation func
-
-		for col, call := range rows.mapper.aggregateColumn {
-			if funcColumn != "" {
-				return nil, fmt.Errorf("unsupported multiple aggregation functions: %s", sqlparser.Stringify(call))
-			}
-			fName := sqlparser.Stringify(call.X)
-			switch strings.ToLower(fName) {
-			case "count":
-				op = append(op, as.ListSizeOp(s.collectionBin))
-				funcColumn = col
-			default:
-				return nil, fmt.Errorf("unsupported aggregation function: %s", fName)
-			}
-			funcColumn = col
+		if aggColumn, err = s.getAggregateOperation(rows, &operations); err != nil {
+			return nil, err
 		}
-	}
-
-	if len(s.arrayIndexValues) > 0 {
+	} else if len(s.arrayIndexValues) > 0 {
 		switch {
 		case s.arrayRangeFilter != nil && len(s.arrayIndexValues) > 0:
 			return nil, fmt.Errorf("unsupported criteria combination: mapKey rawValues list and mapKey range")
 		case s.arrayRangeFilter != nil:
 			return nil, fmt.Errorf("unsupported criteria combination: mapKey rawValues list and mapKey range")
 		case len(s.arrayIndexValues) == 1:
-			op = append(op, as.ListGetOp(s.collectionBin, s.arrayIndexValues[0]))
+			operations = append(operations, as.ListGetOp(s.collectionBin, s.arrayIndexValues[0]))
 		case len(s.arrayIndexValues) > 1:
 			for j := range s.arrayIndexValues {
-				op = append(op, as.ListGetOp(s.collectionBin, s.arrayIndexValues[j]))
+				operations = append(operations, as.ListGetOp(s.collectionBin, s.arrayIndexValues[j]))
 			}
 		}
 	}
 
-	if len(op) > 0 {
-		result, err := s.client.Operate(nil, keys[0], op...)
+	if len(operations) > 0 {
+		result, err := s.client.Operate(nil, keys[0], operations...)
 		if err != nil {
 			return handleNotFoundError(err, rows)
 		}
@@ -464,8 +505,10 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 			return rows, nil
 		}
 
-		if funcColumn != "" {
-			rows.rowsReader = newRowsReader([]*as.Record{{Bins: map[string]interface{}{funcColumn: rawValues}}})
+		if len(rows.mapper.aggregateColumn) > 0 {
+			rows.rowsReader = newRowsReader([]*as.Record{{Bins: map[string]interface{}{
+				s.mapper.pk[0].Column(): keys[0].Value(),
+				aggColumn:               rawValues}}})
 			return rows, nil
 		}
 

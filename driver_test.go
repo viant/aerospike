@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-var namespace = "udb"
+var namespace = "test"
 
 type (
 	testCase struct {
@@ -620,11 +620,39 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,mapKey\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
 	}
 
+	type CountRecGroup struct {
+		ID    int
+		Count int
+	}
+
 	type CountRec struct {
 		Count int
 	}
 
 	var testCases = tstCases{
+
+		{
+			description: "count with group by",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?),(?,?)",
+			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message", 1, "eee", 2, "test message"},
+
+			querySQL:    "SELECT id, COUNT(*) FROM Msg/Items WHERE id in(?,?) GROUP BY 1",
+			queryParams: []interface{}{1, 2},
+			init: []string{
+				"DELETE FROM Msg",
+			},
+			expect: []interface{}{
+				&CountRecGroup{ID: 1, Count: 4},
+				&CountRecGroup{ID: 2, Count: 1},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := CountRecGroup{}
+				err := r.Scan(&rec.ID, &rec.Count)
+				return &rec, err
+			},
+		},
+
 		/// // "1" | MAP('{1:{"count":[0, 0]}, 2:{"count":[0, 0]}}')
 		{
 			description: "array batch merge",
@@ -689,7 +717,6 @@ func Test_QueryContext(t *testing.T) {
 			expect: []interface{}{
 				&Signal2{ID: "1", KeyValue: "v1", Bucket: 0, Count: 5},
 				&Signal2{ID: "1", KeyValue: "v1", Bucket: 1, Count: 11},
-
 				&Signal2{ID: "1", KeyValue: "v2", Bucket: 0, Count: 0},
 				&Signal2{ID: "1", KeyValue: "v2", Bucket: 1, Count: 52},
 			},
@@ -945,6 +972,7 @@ func Test_QueryContext(t *testing.T) {
 				return &rec, err
 			},
 		},
+
 		{
 			description: "list insert with secondaryIndex criteria",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,

@@ -30,17 +30,19 @@ type (
 	}
 
 	mapper struct {
-		fields           []field
-		pk               []*field
-		mapKey           []*field
-		arrayIndex       *field
-		secondaryIndex   *field
-		component        *field
-		arraySize        int
-		byName           map[string]int
-		pseudoColumns    map[string]interface{}
-		aggregateColumn  map[string]*expr.Call
+		fields          []field
+		pk              []*field
+		mapKey          []*field
+		arrayIndex      *field
+		secondaryIndex  *field
+		component       *field
+		arraySize       int
+		byName          map[string]int
+		pseudoColumns   map[string]interface{}
+		aggregateColumn map[string]*expr.Call
+
 		columnZeroValues map[string]interface{}
+		groupBy          []int
 	}
 )
 
@@ -285,10 +287,11 @@ func (m *mapper) addField(aField reflect.StructField, tag *Tag) *field {
 	return mapperField
 }
 
-func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper) (*mapper, error) {
+func newQueryMapper(recordType reflect.Type, aQuery *query.Select, typeMapper *mapper) (*mapper, error) {
 	if typeMapper == nil {
 		return nil, fmt.Errorf("newquerymapper: typeMapper is nil")
 	}
+	list := aQuery.List
 	if list.IsStarExpr() {
 		return typeMapper, nil
 	}
@@ -303,6 +306,7 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 		pk:              typeMapper.pk,
 		pseudoColumns:   make(map[string]interface{}),
 		aggregateColumn: make(map[string]*expr.Call),
+		groupBy:         typeMapper.groupBy,
 	}
 	for i := 0; i < len(list); i++ {
 		item := list[i]
@@ -346,11 +350,34 @@ func newQueryMapper(recordType reflect.Type, list query.List, typeMapper *mapper
 				}
 				ret.aggregateColumn[item.Alias] = actual
 			}
-			if err := ret.appendField(recordType, item.Alias, typeMapper, false, true, nil); err != nil {
+			if err := ret.appendField(recordType, item.Alias, typeMapper, false, true, reflect.TypeOf(0)); err != nil {
 				return nil, err
 			}
 		default:
 			return nil, fmt.Errorf("newmapper: unsupported expression type: %T", actual)
+		}
+	}
+
+	if aQuery.GroupBy != nil {
+		for i := 0; i < len(aQuery.GroupBy); i++ {
+			aGroup := aQuery.GroupBy[i]
+			switch actual := aGroup.Expr.(type) {
+			case *expr.Literal:
+				if actual.Kind != "int" {
+					return nil, fmt.Errorf("unsupported group by literal kind: %v", actual.Kind)
+				}
+				idx, _ := strconv.Atoi(actual.Value)
+				ret.groupBy = append(ret.groupBy, idx-1)
+			case *expr.Ident, *expr.Selector:
+				return nil, fmt.Errorf("unsupported group by expression type: %T, only position based group by is supported", actual)
+			}
+		}
+		if len(ret.groupBy) != 1 {
+			return nil, fmt.Errorf("unsupported group by expression type: %T, only single group by is supported", aQuery.GroupBy)
+		}
+		groupColumn := ret.fields[ret.groupBy[0]]
+		if groupColumn.Column() != ret.pk[0].Column() {
+			return nil, fmt.Errorf("group by column: %v must match primary key column: %v", groupColumn.Column(), ret.pk[0].Column())
 		}
 	}
 	return ret, nil
