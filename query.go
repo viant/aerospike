@@ -23,15 +23,60 @@ func (s *Statement) prepareSelect(SQL string) error {
 
 	setName := sqlparser.Stringify(s.query.From.X)
 	if rawExpr, ok := s.query.From.X.(*expr.Raw); ok {
-		if innerQuery, ok := rawExpr.X.(*query.Select); ok {
-			setName = sqlparser.Stringify(innerQuery.From.X)
-			if s.query.Qualify == nil {
-				s.query.Qualify = innerQuery.Qualify
-			}
+		if err = s.remapInnerQuery(rawExpr, &setName); err != nil {
+			return err
 		}
 	}
 	s.setSet(setName)
 	return s.registerMetaSets()
+}
+
+func (s *Statement) remapInnerQuery(rawExpr *expr.Raw, setName *string) error {
+	var whiteList = make(map[string]*query.Item)
+	if innerQuery, ok := rawExpr.X.(*query.Select); ok {
+		*setName = sqlparser.Stringify(innerQuery.From.X)
+		if s.query.Qualify == nil {
+			s.query.Qualify = innerQuery.Qualify
+		}
+		if s.query.GroupBy == nil {
+			s.query.GroupBy = innerQuery.GroupBy
+		}
+
+		if !innerQuery.List.IsStarExpr() {
+			for i := 0; i < len(innerQuery.List); i++ {
+				item := innerQuery.List[i]
+				switch actual := innerQuery.List[i].Expr.(type) {
+				case *expr.Ident, *expr.Selector:
+					whiteList[sqlparser.Stringify(actual)] = item
+				case *expr.Literal:
+					whiteList[item.Alias] = item
+				case *expr.Call:
+					if item.Alias == "" {
+						return fmt.Errorf("newmapper: %v missing alias in outer query: %s", sqlparser.Stringify(item), sqlparser.Stringify(innerQuery))
+					}
+					whiteList[item.Alias] = item
+				default:
+					return fmt.Errorf("newmapper: invalid expr %s in  outer query: %s", sqlparser.Stringify(actual), sqlparser.Stringify(innerQuery))
+				}
+			}
+
+			updatedList := make([]*query.Item, 0)
+			for i := 0; i < len(s.query.List); i++ {
+				item := s.query.List[i]
+				name := sqlparser.Stringify(item.Expr)
+
+				if len(whiteList) > 0 {
+					innerItem, ok := whiteList[name]
+					if !ok {
+						continue
+					}
+					updatedList = append(updatedList, innerItem)
+				}
+			}
+			s.query.List = updatedList
+		}
+	}
+	return nil
 }
 
 func (s *Statement) registerMetaSets() error {

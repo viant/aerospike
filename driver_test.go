@@ -632,6 +632,27 @@ func Test_QueryContext(t *testing.T) {
 	var testCases = tstCases{
 
 		{
+			description: "wrapepd count with group by",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?),(?,?)",
+			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message", 1, "eee", 2, "test message"},
+
+			querySQL:    "SELECT id, cnt FROM (SELECT id, COUNT(*) cnt FROM Msg/Items WHERE id in(?,?) GROUP BY 1)",
+			queryParams: []interface{}{1, 2},
+			init: []string{
+				"DELETE FROM Msg",
+			},
+			expect: []interface{}{
+				&CountRecGroup{ID: 1, Count: 4},
+				&CountRecGroup{ID: 2, Count: 1},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				rec := CountRecGroup{}
+				err := r.Scan(&rec.ID, &rec.Count)
+				return &rec, err
+			},
+		},
+		{
 			description: "count with group by",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?),(?,?)",
@@ -2186,8 +2207,6 @@ func Test_QueryContext(t *testing.T) {
 			tc.sets = sets
 		}
 	}
-
-	//testCases = testCases[0:1]
 
 	testCases.runTest(t)
 }

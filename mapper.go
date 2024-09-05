@@ -30,17 +30,17 @@ type (
 	}
 
 	mapper struct {
-		fields          []field
-		pk              []*field
-		mapKey          []*field
-		arrayIndex      *field
-		secondaryIndex  *field
-		component       *field
-		arraySize       int
-		byName          map[string]int
-		pseudoColumns   map[string]interface{}
-		aggregateColumn map[string]*expr.Call
-
+		fields           []field
+		pk               []*field
+		mapKey           []*field
+		arrayIndex       *field
+		secondaryIndex   *field
+		component        *field
+		arraySize        int
+		byName           map[string]int
+		columnList       map[string]bool
+		pseudoColumns    map[string]interface{}
+		aggregateColumn  map[string]*expr.Call
 		columnZeroValues map[string]interface{}
 		groupBy          []int
 	}
@@ -295,6 +295,7 @@ func newQueryMapper(recordType reflect.Type, aQuery *query.Select, typeMapper *m
 	if list.IsStarExpr() {
 		return typeMapper, nil
 	}
+
 	ret := &mapper{
 		fields:          make([]field, 0),
 		byName:          make(map[string]int),
