@@ -64,11 +64,13 @@ func (s *Statement) remapInnerQuery(rawExpr *expr.Raw, setName *string) error {
 			for i := 0; i < len(s.query.List); i++ {
 				item := s.query.List[i]
 				name := sqlparser.Stringify(item.Expr)
-
+				if idx := strings.Index(name, "."); idx != -1 { //remve alias if needed
+					name = name[idx+1:]
+				}
 				if len(whiteList) > 0 {
 					innerItem, ok := whiteList[name]
 					if !ok {
-						continue
+						return fmt.Errorf("invalid outer query column: %v, in %v", name, sqlparser.Stringify(s.query))
 					}
 					updatedList = append(updatedList, innerItem)
 				}
