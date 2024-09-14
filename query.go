@@ -5,8 +5,10 @@ import (
 	"database/sql/driver"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
+	"github.com/viant/parsly"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
+	"github.com/viant/sqlparser/node"
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/x"
 	"github.com/viant/xunsafe"
@@ -144,6 +146,11 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		query:      s.query,
 		ctx:        ctx,
 	}
+
+	if s.query.Qualify != nil {
+		s.query.Qualify.X = unwrapQualify(s.query.Qualify.X)
+	}
+
 	if err := s.updateCriteria(s.query.Qualify, args, true); err != nil {
 		return nil, err
 	}
@@ -271,6 +278,30 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		}
 	}
 	return rows, nil
+}
+
+func unwrapQualify(n node.Node) node.Node {
+	if b, ok := n.(*expr.Binary); ok {
+		if b.Y == nil {
+			return unwrapQualify(b.X)
+		}
+	}
+	p, ok := n.(*expr.Parenthesis)
+	if !ok {
+		return n
+	}
+
+	if p.X == nil && p.Raw != "" {
+		qualify := &expr.Qualify{}
+		cursor := parsly.NewCursor("", []byte(p.Raw[1:len(p.Raw)-1]), 0)
+		if err := sqlparser.ParseQualify(cursor, qualify); err != nil {
+			return n
+		}
+		return unwrapQualify(qualify.X)
+	} else if p.X != nil {
+		return p.X
+	}
+	return n
 }
 
 func (s *Statement) handleGroupBy(rows *Rows, keys []*as.Key) error {

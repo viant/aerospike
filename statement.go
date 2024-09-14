@@ -291,6 +291,9 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		}
 		values.Idx = idx
 		name := strings.ToLower(sqlparser.Stringify(ident))
+		if idx := strings.Index(name, "."); idx != -1 {
+			name = name[idx+1:]
+		}
 		var exprValues = values.Values(func(idx int) interface{} {
 			return args[idx].Value
 		})
