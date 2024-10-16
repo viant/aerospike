@@ -136,6 +136,15 @@ func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]inter
 
 func (s *Statement) handleMapMerge(groups map[interface{}][]map[interface{}]map[interface{}]interface{}) error {
 	addColumn, subColumn, err := s.identifyAddSubColumn()
+	if s.cfg.concurrency <= 1 {
+		for recKey := range groups {
+			groupSet := groups[recKey]
+			if e := s.mergeMaps(recKey, groupSet, addColumn, subColumn); e != nil {
+				err = e
+			}
+		}
+		return err
+	}
 	if err != nil {
 		return err
 	}
