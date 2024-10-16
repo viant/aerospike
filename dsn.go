@@ -64,7 +64,7 @@ func ParseDSN(dsn string) (*Config, error) {
 		port:         iPort,
 		namespace:    namespace,
 		batchSize:    1000,
-		concurrency:  1,
+		concurrency:  10,
 		ClientPolicy: as.NewClientPolicy(), //TODO
 		Values:       URL.Query(),          //TODO
 	}

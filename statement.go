@@ -89,6 +89,7 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 	case sqlparser.KindRegisterSet:
 		return s.handleRegisterSet(args)
 	case sqlparser.KindInsert:
+		defer s.cleanup()
 		if err := s.handleInsert(args); err != nil {
 			return nil, err
 		}
@@ -428,7 +429,7 @@ func (s *Statement) setTypeBasedMapper() error {
 	}
 	aSet, err := s.lookupSet()
 	if err != nil {
-		return fmt.Errorf("executeselect: unable to lookup set with name %s, %w", s.set, err)
+		return fmt.Errorf("unable to lookup set with name %s, %w", s.set, err)
 	}
 	err = s.setRecordType(aSet)
 	if err != nil {
@@ -477,6 +478,22 @@ func (s *Statement) getKey(fields []*field, bins map[string]interface{}) interfa
 		builder.WriteString(fmt.Sprintf("%v", bins[key.Column()]))
 	}
 	return nil
+}
+
+func (s *Statement) cleanup() {
+	if s.insert != nil {
+		s.insert.Values = nil
+		s.insert = nil
+	}
+	if s.update != nil {
+		s.update = nil
+	}
+	if s.delete != nil {
+		s.delete = nil
+	}
+
+	s.writeLimiter = nil
+	s.mapper = nil
 }
 
 // IsKeyNotFound returns true if mapKey not found error.

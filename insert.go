@@ -2,7 +2,6 @@ package aerospike
 
 import (
 	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
@@ -340,7 +339,6 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	if s.insert == nil {
 		return fmt.Errorf("insert statement is not initialized")
 	}
-
 	if len(s.mapper.pk) == 0 {
 		return fmt.Errorf("unable to find primary mapKey field")
 	}
@@ -355,21 +353,10 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		s.writeLimiter.acquire()
 	}
 
-	if isDebugOn() {
-		type op struct {
-			Set     string
-			Count   int
-			Limiter bool
-		}
-		data, _ := json.Marshal(op{Set: s.set, Count: batchCount, Limiter: s.writeLimiter != nil})
-		fmt.Println(data)
-	}
-
 	s.affected = int64(batchCount)
 	if isDryRun("insert") {
 		return nil
 	}
-
 	//if batchCount > 1 { //TODO check impact on regular insert
 	if s.collectionType.IsMap() {
 		if len(s.mapper.mapKey) == 0 {
@@ -465,7 +452,6 @@ func (s *Statement) populateInsertBins(args []driver.NamedValue, argIndex *int) 
 				return nil, err
 			}
 			value = val.Value
-
 		}
 		value, err := aField.ensureValidValueType(value)
 		if err != nil {
