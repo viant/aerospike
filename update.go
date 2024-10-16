@@ -19,7 +19,7 @@ func (s *Statement) prepareUpdate(sql string) error {
 
 func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 	if s.update == nil {
-		return fmt.Errorf("insert statement is not initialized")
+		return fmt.Errorf("update statement is not initialized")
 	}
 	//TODO update me
 	s.affected = 1

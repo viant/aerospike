@@ -89,7 +89,6 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 	case sqlparser.KindRegisterSet:
 		return s.handleRegisterSet(args)
 	case sqlparser.KindInsert:
-		defer s.cleanup()
 		if err := s.handleInsert(args); err != nil {
 			return nil, err
 		}
@@ -152,6 +151,7 @@ func (s *Statement) NumInput() int {
 }
 
 func (s *Statement) Close() error {
+	s.cleanup()
 	return nil
 }
 
