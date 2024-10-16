@@ -2,6 +2,7 @@ package aerospike
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
@@ -239,9 +240,6 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 
 			}
 		}
-		if isDebugOn() {
-			fmt.Printf("mergeMaps: %v groups: %v, createOp, %v, op: %v\n", s.set, len(groupSet), len(createOp), len(ops))
-		}
 		aSet, err := s.lookupSet()
 		if err != nil {
 			return err
@@ -358,11 +356,13 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	}
 
 	if isDebugOn() {
-		fmt.Printf("handle insert: %v, recs: %v, limiter: %v\n", s.set, batchCount, s.writeLimiter != nil)
-		defer func() {
-			fmt.Printf("DONE handle insert: %v, recs: %v, limiter: %v\n", s.set, batchCount, s.writeLimiter != nil)
-
-		}()
+		type op struct {
+			Set     string
+			Count   int
+			Limiter bool
+		}
+		data, _ := json.Marshal(op{Set: s.set, Count: batchCount, Limiter: s.writeLimiter != nil})
+		fmt.Println(data)
 	}
 
 	s.affected = int64(batchCount)
