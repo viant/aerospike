@@ -5,6 +5,8 @@ import (
 	"database/sql/driver"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
+	"os"
+	"strings"
 )
 
 const (
@@ -18,6 +20,10 @@ func init() {
 // Driver is exported to make the driver directly accessible.
 // In general the driver is used via the database/sql package.
 type Driver struct{}
+
+func isDryRun(operation string) bool {
+	return strings.Contains(os.Getenv("AEROSPIKE_DRY_RUN"), operation)
+}
 
 // Open new Connection.
 // See https://github.com/viant/aerospike#dsn-data-source-name for how

@@ -124,6 +124,10 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 		return fmt.Errorf("update statement must have one pk")
 	}
 
+	if isDryRun("update") {
+		return nil
+	}
+
 	aSet, err := s.lookupSet()
 	if err != nil {
 		return err

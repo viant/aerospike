@@ -344,6 +344,9 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	}
 
 	s.affected = int64(batchCount)
+	if isDryRun("insert") {
+		return nil
+	}
 
 	//if batchCount > 1 { //TODO check impact on regular insert
 	if s.collectionType.IsMap() {

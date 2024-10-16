@@ -458,6 +458,9 @@ func (s *Statement) handleDelete(args []driver.NamedValue) error {
 	if s.delete.Qualify == nil {
 		return s.client.Truncate(nil, s.namespace, s.set, nil)
 	}
+	if isDryRun("delete") {
+		return nil
+	}
 	//TODO add support for single/batch delete
 	return fmt.Errorf("not yet supported")
 }
