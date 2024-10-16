@@ -359,6 +359,10 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 
 	if isDebugOn() {
 		fmt.Printf("handle insert: %v, recs: %v, limiter: %v\n", s.set, batchCount, s.writeLimiter != nil)
+		defer func() {
+			fmt.Printf("DONE handle insert: %v, recs: %v, limiter: %v\n", s.set, batchCount, s.writeLimiter != nil)
+
+		}()
 	}
 
 	s.affected = int64(batchCount)
