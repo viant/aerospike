@@ -9,9 +9,10 @@ import (
 )
 
 type connection struct {
-	cfg    *Config
-	client *as.Client
-	sets   *registry
+	cfg          *Config
+	client       *as.Client
+	sets         *registry
+	writeLimiter *limiter
 }
 
 // Prepare returns a prepared statement, bound to this connection.
@@ -25,12 +26,13 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 	c.sets.Merge(globalSets)
 
 	stmt := &Statement{
-		SQL:       SQL,
-		kind:      kind,
-		sets:      c.sets,
-		client:    c.client,
-		cfg:       c.cfg,
-		namespace: c.cfg.namespace,
+		SQL:          SQL,
+		kind:         kind,
+		sets:         c.sets,
+		client:       c.client,
+		cfg:          c.cfg,
+		namespace:    c.cfg.namespace,
+		writeLimiter: c.writeLimiter,
 	}
 	stmt.checkQueryParameters()
 

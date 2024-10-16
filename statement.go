@@ -74,6 +74,7 @@ type Statement struct {
 	secondaryIndexValues []interface{}
 	lastInsertID         *int64
 	affected             int64
+	writeLimiter         *limiter
 }
 
 // Exec executes statements
@@ -84,7 +85,6 @@ func (s *Statement) Exec(args []driver.Value) (driver.Result, error) {
 // ExecContext executes statements
 func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	ret := &result{totalRows: s.affected}
-
 	switch s.kind {
 	case sqlparser.KindRegisterSet:
 		return s.handleRegisterSet(args)

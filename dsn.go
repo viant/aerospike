@@ -10,12 +10,13 @@ import (
 
 // Config represent Connection config
 type Config struct {
-	host         string
-	port         int
-	namespace    string
-	ClientPolicy *as.ClientPolicy
-	batchSize    int
-	concurrency  int
+	host               string
+	port               int
+	namespace          string
+	ClientPolicy       *as.ClientPolicy
+	batchSize          int
+	concurrency        int
+	maxConcurrentWrite int
 	url.Values
 	// expiry options
 	/*
@@ -68,11 +69,31 @@ func ParseDSN(dsn string) (*Config, error) {
 		Values:       URL.Query(),          //TODO
 	}
 
-	//if len(cfg.Values) > 0 { //TODO
-	//	if _, ok := cfg.Values[endpoint]; ok {
-	//		cfg.Endpoint = cfg.Values.Get(endpoint)
-	//	}
-	//}
-
+	if len(cfg.Values) > 0 { //TODO
+		if v, ok := cfg.Values["concurrency"]; ok {
+			if cfg.concurrency, err = strconv.Atoi(v[0]); err != nil {
+				return nil, fmt.Errorf("invalid dsn concurrency: %v", err)
+			}
+		}
+		if v, ok := cfg.Values["maxConcurrentWrite"]; ok {
+			if cfg.maxConcurrentWrite, err = strconv.Atoi(v[0]); err != nil {
+				return nil, fmt.Errorf("invalid dsn concurrency: %v", err)
+			}
+		}
+		if v, ok := cfg.Values["batchSize"]; ok {
+			if cfg.batchSize, err = strconv.Atoi(v[0]); err != nil {
+				return nil, fmt.Errorf("invalid dsn batchSize: %v", err)
+			}
+		}
+	}
+	if cfg.concurrency == 0 {
+		v, has, err := maxConcurrentWrite()
+		if err != nil {
+			return nil, err
+		}
+		if has {
+			cfg.maxConcurrentWrite = v
+		}
+	}
 	return cfg, nil
 }

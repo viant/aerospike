@@ -344,14 +344,15 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		return fmt.Errorf("unable to find primary mapKey field")
 	}
 	isMerge := len(s.insert.OnDuplicateKeyUpdate) > 0
-
 	batchCount := len(s.insert.Values) / len(s.insert.Columns)
-
 	mod := len(s.insert.Values) % len(s.insert.Columns)
 	if mod != 0 {
 		return fmt.Errorf("invalid insert values count: %v, expected multiple of %v", len(s.insert.Values), len(s.insert.Columns))
 	}
-
+	if s.writeLimiter != nil {
+		defer s.writeLimiter.release()
+		s.writeLimiter.acquire()
+	}
 	s.affected = int64(batchCount)
 	if isDryRun("insert") {
 		return nil

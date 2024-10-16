@@ -23,7 +23,10 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 	}
 	//TODO update me
 	s.affected = 1
-
+	if s.writeLimiter != nil {
+		defer s.writeLimiter.release()
+		s.writeLimiter.acquire()
+	}
 	var operates []*as.Operation
 	j := 0
 	var putBins = map[string]interface{}{}
