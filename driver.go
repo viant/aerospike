@@ -52,7 +52,7 @@ func (d Driver) Open(dsn string) (driver.Conn, error) {
 			return nil, err
 		}
 	*/
-	limiter := writeLimiter.getLimiter(dsn, cfg.maxConcurrentWrite)
+	limiter := writeLimiter.getLimiter(dsn, max(1, cfg.maxConcurrentWrite))
 	return &connection{
 		cfg:          cfg,
 		client:       client,
