@@ -1,23 +1,8 @@
 package aerospike
 
 import (
-	"fmt"
-	"os"
-	"strconv"
 	"sync"
 )
-
-func maxConcurrentWrite() (int, bool, error) {
-	value := os.Getenv("AEROSPIKE_CONCURRENT_WRITE")
-	if value == "" {
-		return 0, false, nil
-	}
-	ret, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, true, fmt.Errorf("invalid AEROSPIKE_CONCURRENT_WRITE: '%v' %w", value, err)
-	}
-	return ret, true, nil
-}
 
 type (
 	reteLimiter struct {
