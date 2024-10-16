@@ -95,5 +95,10 @@ func ParseDSN(dsn string) (*Config, error) {
 			cfg.maxConcurrentWrite = v
 		}
 	}
+
+	if isDebugOn() {
+		fmt.Printf("Aerospike config: %+v\n", cfg)
+	}
+
 	return cfg, nil
 }

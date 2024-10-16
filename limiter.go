@@ -16,7 +16,7 @@ func maxConcurrentWrite() (int, bool, error) {
 	if err != nil {
 		return 0, true, fmt.Errorf("invalid AEROSPIKE_CONCURRENT_WRITE: '%v' %w", value, err)
 	}
-	return ret, err == nil, err
+	return ret, true, nil
 }
 
 type (
