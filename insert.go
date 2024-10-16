@@ -180,6 +180,7 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 	if s.mapper.component != nil {
 		slice = s.mapper.newSlice()
 	}
+
 	for _, group := range groupSet {
 		var ops []*as.Operation
 		var createOp []*as.Operation
@@ -238,7 +239,9 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 
 			}
 		}
-
+		if isDebugOn() {
+			fmt.Printf("mergeMaps: %v groups: %v, createOp, %v, op: %v\n", s.set, len(groupSet), len(createOp), len(ops))
+		}
 		aSet, err := s.lookupSet()
 		if err != nil {
 			return err

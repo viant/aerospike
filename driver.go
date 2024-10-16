@@ -25,6 +25,10 @@ func isDryRun(operation string) bool {
 	return strings.Contains(os.Getenv("AEROSPIKE_DRY_RUN"), operation)
 }
 
+func isDebugOn() bool {
+	return os.Getenv("AEROSPIKE_DEBUG") != ""
+}
+
 // Open new Connection.
 // See https://github.com/viant/aerospike#dsn-data-source-name for how
 // the DSN string is formatted
