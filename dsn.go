@@ -10,14 +10,15 @@ import (
 
 // Config represent Connection config
 type Config struct {
-	host               string
-	port               int
-	namespace          string
-	ClientPolicy       *as.ClientPolicy
-	batchSize          int
-	concurrency        int
-	maxConcurrentWrite int
-	url.Values
+	host                string
+	port                int
+	namespace           string
+	ClientPolicy        *as.ClientPolicy
+	batchSize           int
+	concurrency         int
+	maxConcurrentWrite  int
+	connectionQueueSize int
+	Values              url.Values
 	// expiry options
 	/*
 		Key     string
@@ -65,11 +66,11 @@ func ParseDSN(dsn string) (*Config, error) {
 		namespace:    namespace,
 		batchSize:    1000,
 		concurrency:  10,
-		ClientPolicy: as.NewClientPolicy(), //TODO
-		Values:       URL.Query(),          //TODO
+		ClientPolicy: as.NewClientPolicy(),
+		Values:       URL.Query(),
 	}
 
-	if len(cfg.Values) > 0 { //TODO
+	if len(cfg.Values) > 0 {
 		if v, ok := cfg.Values["concurrency"]; ok {
 			if cfg.concurrency, err = strconv.Atoi(v[0]); err != nil {
 				return nil, fmt.Errorf("invalid dsn concurrency: %v", err)
@@ -85,7 +86,18 @@ func ParseDSN(dsn string) (*Config, error) {
 				return nil, fmt.Errorf("invalid dsn batchSize: %v", err)
 			}
 		}
+
+		if v, ok := cfg.Values["connectionQueueSize"]; ok {
+			if cfg.connectionQueueSize, err = strconv.Atoi(v[0]); err != nil {
+				return nil, fmt.Errorf("invalid dsn batchSize: %v", err)
+			}
+		}
 	}
+
+	if cfg.connectionQueueSize != 0 {
+		cfg.ClientPolicy.ConnectionQueueSize = cfg.connectionQueueSize
+	}
+
 	if isDebugOn() {
 		fmt.Printf("Aerospike config: %+v\n", cfg)
 	}

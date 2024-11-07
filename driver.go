@@ -42,16 +42,11 @@ func (d Driver) Open(dsn string) (driver.Conn, error) {
 		return nil, err
 	}
 
-	client, err := as.NewClient(cfg.host, cfg.port) //TODO
+	client, err := as.NewClientWithPolicy(cfg.ClientPolicy, cfg.host, cfg.port)
 	if err != nil {
 		return nil, err
 	}
-	/*
-		client, err := as.NewClientWithPolicy(cfg.ClientPolicy, cfg.host, cfg.port)
-		if err != nil {
-			return nil, err
-		}
-	*/
+
 	limiter := writeLimiter.getLimiter(dsn, cfg.maxConcurrentWrite)
 	return &connection{
 		cfg:          cfg,

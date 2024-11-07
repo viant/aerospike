@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-var namespace = "test"
+var namespace = "ns_memory"
 
 type (
 	testCase struct {
@@ -112,7 +112,7 @@ func Test_Meta(t *testing.T) {
 		   from information_schema.schemata`,
 			queryParams: []interface{}{},
 			expect: []interface{}{
-				&catalog{CatalogName: "", SchemaName: "udb", SQLPath: "", CharacterSet: "utf8", Collation: ""},
+				&catalog{CatalogName: "", SchemaName: namespace, SQLPath: "", CharacterSet: "utf8", Collation: ""},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				rec := catalog{}
