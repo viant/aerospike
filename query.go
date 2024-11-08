@@ -218,9 +218,9 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 
 		var record *as.Record
 		if s.query.List.IsStarExpr() {
-			record, err = s.client.Get(as.NewPolicy(), keys[0])
+			record, err = s.client.Get(nil, keys[0])
 		} else {
-			record, err = s.client.Get(as.NewPolicy(), keys[0], bins...)
+			record, err = s.client.Get(nil, keys[0], bins...)
 		}
 		if err != nil {
 			return handleNotFoundError(err, rows)
@@ -400,7 +400,7 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 		rows.rowsReader = newRowsReader(recs)
 		return rows, nil
 	}
-	record, err := s.client.Get(as.NewPolicy(), keys[0], s.mapper.pk[0].Column(), s.collectionBin)
+	record, err := s.client.Get(nil, keys[0], s.mapper.pk[0].Column(), s.collectionBin)
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}
@@ -448,7 +448,7 @@ func (s *Statement) handleMapListQuery(keys []*as.Key, rows *Rows) (driver.Rows,
 		rows.rowsReader = newRowsReader(recs)
 		return rows, nil
 	}
-	record, err := s.client.Get(as.NewPolicy(), keys[0], s.mapper.pk[0].Column(), s.collectionBin)
+	record, err := s.client.Get(nil, keys[0], s.mapper.pk[0].Column(), s.collectionBin)
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}
@@ -603,7 +603,7 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 		return rows, nil
 	}
 
-	record, err := s.client.Get(as.NewPolicy(), keys[0], s.collectionBin, s.mapper.pk[0].Column())
+	record, err := s.client.Get(nil, keys[0], s.collectionBin, s.mapper.pk[0].Column())
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}

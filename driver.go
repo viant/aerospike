@@ -42,7 +42,24 @@ func (d Driver) Open(dsn string) (driver.Conn, error) {
 		return nil, err
 	}
 
-	client, err := as.NewClientWithPolicy(cfg.ClientPolicy, cfg.host, cfg.port)
+	clientPolicy := as.NewClientPolicy()
+
+	err = cfg.adjustClientPolicy(clientPolicy)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := as.NewClientWithPolicy(clientPolicy, cfg.host, cfg.port)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cfg.adjustDefaultPolicy(client.DefaultPolicy)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cfg.adjustDefaultWritePolicy(client.DefaultWritePolicy)
 	if err != nil {
 		return nil, err
 	}
