@@ -118,7 +118,7 @@ func (c *Config) adjustBasePolicy(policy *as.BasePolicy, prefix string) error {
 
 	name := prefix + "TotalTimeout"
 	if v, ok := c.Values[name]; ok {
-		value, err := time.ParseDuration(v[0] + "ms")
+		value, err := time.ParseDuration(v[0] + "s")
 		if err != nil {
 			return fmt.Errorf("invalid dsn param %v: %v", name, err)
 		}
