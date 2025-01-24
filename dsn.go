@@ -51,6 +51,13 @@ func ParseDSN(dsn string) (*Config, error) {
 				return nil, fmt.Errorf("invalid dsn concurrency: %v", err)
 			}
 		}
+		if v, ok := cfg.Values["disablePool"]; ok {
+			if len(v) > 0 {
+				cfg.disablePool = v[0] == "true"
+			} else {
+				cfg.disablePool = true
+			}
+		}
 		if v, ok := cfg.Values["maxConcurrentWrite"]; ok {
 			if cfg.maxConcurrentWrite, err = strconv.Atoi(v[0]); err != nil {
 				return nil, fmt.Errorf("invalid dsn concurrency: %v", err)

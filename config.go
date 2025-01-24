@@ -16,6 +16,7 @@ type Config struct {
 	batchSize          int
 	concurrency        int
 	maxConcurrentWrite int
+	disablePool        bool
 	Values             url.Values
 
 	// expiry options
