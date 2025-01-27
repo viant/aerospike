@@ -23,7 +23,10 @@ func (c *connection) Prepare(query string) (driver.Stmt, error) {
 // PrepareContext returns a prepared statement, bound to this connection.
 func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stmt, error) {
 	kind := sqlparser.ParseKind(SQL)
-	c.sets.Merge(globalSets)
+	err := c.sets.Merge(globalSets)
+	if err != nil {
+		return nil, err
+	}
 
 	stmt := &Statement{
 		SQL:          SQL,

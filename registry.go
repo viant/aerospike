@@ -15,12 +15,9 @@ type (
 
 // Register registers a set
 func (r *registry) Register(aSet *set) error {
-	if aSet == nil {
-		return fmt.Errorf("unable to register set: set is nil")
-	}
-	r.register(aSet)
-	return nil
+	return r.register(aSet)
 }
+
 func (r *registry) clear() {
 	r.mux.Lock()
 	r.types = make(map[string]*set)
@@ -38,14 +35,23 @@ func (r *registry) sets() []string {
 	return keys
 }
 
-func (r *registry) register(aSet *set) {
-	r.mux.RLock()
-	key := aSet.xType.Name //TODO check if not nil
-	r.mux.RUnlock()
+func (r *registry) register(aSet *set) error {
+	if aSet == nil {
+		return fmt.Errorf("unable to register set: set is nil")
+	}
+	if aSet.xType.Name == "" {
+		return fmt.Errorf("unable to register set: set name is empty")
+	}
 
 	r.mux.Lock()
+	defer r.mux.Unlock()
+
+	key := aSet.xType.Name
+	if _, exists := r.types[key]; exists {
+		return nil
+	}
 	r.types[key] = aSet
-	r.mux.Unlock()
+	return nil
 }
 
 // Lookup returns a set by name
@@ -56,6 +62,11 @@ func (r *registry) Lookup(name string) *set {
 	return aSet
 }
 
+// Has returns true if set is registered
+func (r *registry) Has(name string) bool {
+	return r.Lookup(name) != nil
+}
+
 // newRegistry creates a registry
 func newRegistry() *registry {
 	ret := &registry{types: make(map[string]*set)}
@@ -63,8 +74,13 @@ func newRegistry() *registry {
 }
 
 // Merge merges registry
-func (r *registry) Merge(registry *registry) {
+func (r *registry) Merge(registry *registry) error {
+	registry.mux.RLock()
+	defer registry.mux.RUnlock()
 	for _, aSet := range registry.types {
-		r.register(aSet)
+		if err := r.Register(aSet); err != nil {
+			return err
+		}
 	}
+	return nil
 }

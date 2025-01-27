@@ -86,29 +86,33 @@ func (s *Statement) remapInnerQuery(rawExpr *expr.Raw, setName *string) error {
 func (s *Statement) registerMetaSets() error {
 	switch strings.ToLower(s.namespace) {
 	case "information_schema":
-		switch strings.ToLower(s.set) {
+		setName := strings.ToLower(s.set)
+		if s.sets.Has(setName) {
+			return nil
+		}
+		switch setName {
 		case "schemata":
-			s.sets.register(&set{
+			return s.sets.Register(&set{
 				xType:  x.NewType(reflect.TypeOf(catalog{}), x.WithName("schemata")),
 				ttlSec: 0,
 			})
 		case "tables":
-			s.sets.register(&set{
+			return s.sets.Register(&set{
 				xType:  x.NewType(reflect.TypeOf(tableInfo{}), x.WithName("tables")),
 				ttlSec: 0,
 			})
 		case "columns":
-			s.sets.register(&set{
+			return s.sets.Register(&set{
 				xType:  x.NewType(reflect.TypeOf(tableColumn{}), x.WithName("columns")),
 				ttlSec: 0,
 			})
 		case "processlist":
-			s.sets.register(&set{
+			return s.sets.Register(&set{
 				xType:  x.NewType(reflect.TypeOf(processList{}), x.WithName("processlist")),
 				ttlSec: 0,
 			})
 		case "serverinfo":
-			s.sets.register(&set{
+			return s.sets.Register(&set{
 				xType:  x.NewType(reflect.TypeOf(serverInfo{}), x.WithName("serverinfo")),
 				ttlSec: 0,
 			})
