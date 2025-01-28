@@ -99,6 +99,9 @@ func (c *connection) BeginTx(ctx context.Context, opts driver.TxOptions) (driver
 
 // Close closes connection
 func (c *connection) Close() error {
+	if c.cfg.disablePool {
+		c.client.Close()
+	}
 	return nil
 }
 
