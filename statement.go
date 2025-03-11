@@ -527,5 +527,6 @@ func (s *Statement) writePolicy(aSet *set, sendKey bool) *as.WritePolicy {
 	writePolicy.Generation = 0
 	writePolicy.Expiration = aSet.ttlSec
 	writePolicy.SendKey = sendKey
+	writePolicy.MaxRetries = 0
 	return &writePolicy
 }
