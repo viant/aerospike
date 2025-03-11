@@ -71,8 +71,8 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 			if err != nil {
 				return err
 			}
-			writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
-			writePolicy.SendKey = true
+
+			writePolicy := s.writePolicy(aSet, true)
 
 			var ops []*as.Operation
 			mapPolicy := as.DefaultMapPolicy()
@@ -126,7 +126,8 @@ func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]inter
 		values[mapKey] = s.mapper.newSlice()
 	}
 	ops = append(ops, as.MapPutItemsOp(newEntryPolicy, s.collectionBin, values))
-	writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
+	writePolicy := s.writePolicy(aSet, true)
+
 	writePolicy.SendKey = true
 	if _, err := s.client.Operate(writePolicy, key, ops...); err != nil {
 		return err
@@ -243,8 +244,8 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 		if err != nil {
 			return err
 		}
-		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
-		writePolicy.SendKey = true
+		writePolicy := s.writePolicy(aSet, true)
+
 		if _, err = s.client.Operate(writePolicy, key, createOp...); err != nil {
 			return err
 		}
@@ -313,8 +314,8 @@ func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) er
 			return err
 		}
 		operations = append(operations, as.PutOp(as.NewBin(s.mapper.pk[0].Column(), keyValue)))
-		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
-		writePolicy.SendKey = true
+		writePolicy := s.writePolicy(aSet, true)
+
 		ret, err := s.client.Operate(writePolicy, key, operations...)
 		if err != nil {
 			return err
@@ -385,8 +386,7 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		if err != nil {
 			return err
 		}
-		writePolicy := as.NewWritePolicy(0, aSet.ttlSec)
-		writePolicy.SendKey = true
+		writePolicy := s.writePolicy(aSet, true)
 
 		if s.collectionBin != "" {
 			return s.handleMapInsert(bins, err, writePolicy, key)

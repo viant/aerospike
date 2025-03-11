@@ -521,3 +521,11 @@ type rangeBinFilter struct {
 	begin int
 	end   int
 }
+
+func (s *Statement) writePolicy(aSet *set, sendKey bool) *as.WritePolicy {
+	writePolicy := *s.client.DefaultWritePolicy
+	writePolicy.Generation = 0
+	writePolicy.Expiration = aSet.ttlSec
+	writePolicy.SendKey = sendKey
+	return &writePolicy
+}
