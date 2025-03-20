@@ -139,11 +139,12 @@ func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]inter
 func (s *Statement) handleMapMerge(groups map[interface{}][]map[interface{}]map[interface{}]interface{}) error {
 	start := time.Now()
 	maxRateLimiter := 0
-	defer func(limit *int) {
+	groupLen := 0
+	defer func(limit, groupLen *int) {
 		if s.set == "publisher" || s.set == "publisher/Values" {
-			fmt.Printf("handleMapMerge took %v for %s and maxRateLimiter = %d, concurrency = %d\n", time.Since(start), s.set, *limit, s.cfg.concurrency)
+			fmt.Printf("handleMapMerge took %v for %s and maxRateLimiter = %d, concurrency = %d, len(groups)) =%d\n", time.Since(start), s.set, *limit, s.cfg.concurrency, *groupLen)
 		}
-	}(&maxRateLimiter)
+	}(&maxRateLimiter, &groupLen)
 
 	maxRateLimiter = -1
 	addColumn, subColumn, err := s.identifyAddSubColumn()
@@ -162,6 +163,7 @@ func (s *Statement) handleMapMerge(groups map[interface{}][]map[interface{}]map[
 	wg := sync.WaitGroup{}
 	var rateLimiter = make(chan bool, min(s.cfg.concurrency, len(groups)))
 	maxRateLimiter = max(maxRateLimiter, min(s.cfg.concurrency, len(groups)))
+	groupLen = len(groups)
 	for recKey := range groups {
 		groupSet := groups[recKey]
 		rateLimiter <- true
