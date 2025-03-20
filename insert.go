@@ -141,7 +141,7 @@ func (s *Statement) handleMapMerge(groups map[interface{}][]map[interface{}]map[
 	maxRateLimiter := 0
 	defer func() {
 		if s.set == "publisher" || s.set == "publisher/Values" {
-			fmt.Printf("handleMapMerge took %v for %s and maxRateLimiter = %d\n", time.Since(start), s.set, maxRateLimiter)
+			fmt.Printf("handleMapMerge took %v for %s and maxRateLimiter = %d, concurrency = %d\n", time.Since(start), s.set, maxRateLimiter, s.cfg.concurrency)
 		}
 	}()
 
