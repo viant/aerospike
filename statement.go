@@ -282,6 +282,13 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 			if rightLiteral, ok := binary.Y.(*expr.Literal); ok {
 				s.falsePredicate = !(leftLiteral.Value == rightLiteral.Value)
 				return nil
+			} else {
+				if rightBinary, ok := binary.Y.(*expr.Binary); ok {
+					if rightLiteral, ok := rightBinary.X.(*expr.Literal); ok {
+						s.falsePredicate = !(leftLiteral.Value == rightLiteral.Value)
+						return nil
+					}
+				}
 			}
 		}
 	}
