@@ -9,6 +9,10 @@ func registerSet(aSet *set) error {
 }
 
 // RegisterSet register set
-func RegisterSet(xType *x.Type) error {
-	return globalSets.Register(&set{xType: xType})
+func RegisterSet(xType *x.Type, options ...Option) error {
+	aSet := &set{xType: xType}
+	for _, option := range options {
+		option(aSet)
+	}
+	return globalSets.Register(aSet)
 }

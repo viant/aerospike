@@ -47,6 +47,7 @@ type (
 )
 
 func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
+
 	if iFacePtr, ok := value.(*interface{}); ok && iFacePtr != nil {
 		value = *iFacePtr
 	}
@@ -209,6 +210,11 @@ func extractValue(value interface{}) (interface{}, error) {
 			value = nil
 		}
 		value = *actual
+	case *bool:
+		if actual == nil {
+			value = nil
+		}
+		value = bool(*actual)	
 	default:
 		return nil, fmt.Errorf("extractvalue - unsupported type %T", actual)
 	}

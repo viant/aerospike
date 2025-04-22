@@ -19,6 +19,7 @@ func (s *Statement) prepareInsert(sql string) error {
 }
 
 func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
+
 	batchCount := len(s.insert.Values) / len(s.insert.Columns)
 	var groups = make(map[interface{}][]map[interface{}]map[interface{}]interface{})
 	argIndex := 0

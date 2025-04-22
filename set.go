@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+type Option func(s *set)
+
 type set struct {
 	xType           *x.Type
 	typeBasedMapper *mapper
@@ -29,4 +31,11 @@ func (s *set) registerQueryMapper(query string, aMapper *mapper) {
 		s.queryMapper = make(map[string]*mapper)
 	}
 	s.queryMapper[query] = aMapper
+}
+
+
+func WithTTLSec(ttlSec uint32) Option {
+	return func(s *set) {
+		s.ttlSec = ttlSec
+	}
 }
