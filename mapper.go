@@ -143,91 +143,88 @@ func extractValue(value interface{}) (interface{}, error) {
 	switch actual := value.(type) {
 	case *int64:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
-		value = int(*actual)
+		return int(*actual), nil
 	case *int32:
-		value = nil
-		value = int(*actual)
+		if actual == nil {
+			return nil, nil
+		}
+		return int(*actual), nil
 	case *float64:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
-		value = int(*actual)
+		return int(*actual), nil
 	case *float32:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
-		value = int(*actual)
+		return int(*actual), nil
 	case *int16:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
-		value = int(*actual)
+		return int(*actual), nil
 	case *int:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
-		value = *actual
+		return *actual, nil
 	case *string:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
-		value = *actual
-	case **time.Time: // TODO time handling
-		if actual == nil {
-			value = nil
+		return *actual, nil
+	case **time.Time:
+		if actual == nil || *actual == nil {
+			return nil, nil
 		}
-		valuePtr := *actual
-		if valuePtr == nil {
-			value = nil
-		}
-		tValue := *valuePtr
-		value = tValue.Format(time.RFC3339)
-	case *[]string:
-		if actual == nil {
-			value = nil
-		}
-		value = *actual
-	case *[]byte:
-		if actual == nil {
-			value = nil
-		}
-		value = *actual
-	case *[]int:
-		if actual == nil {
-			value = nil
-		}
-		value = *actual
+		tValue := *(*actual)
+		return tValue.Format(time.RFC3339), nil
 	case *time.Time:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
 		tValue := *actual
-		value = tValue.Format(time.RFC3339)
+		return tValue.Format(time.RFC3339), nil
+	case *[]string:
+		if actual == nil {
+			return nil, nil
+		}
+		return *actual, nil
+	case *[]byte:
+		if actual == nil {
+			return nil, nil
+		}
+		return *actual, nil
+	case *[]int:
+		if actual == nil {
+			return nil, nil
+		}
+		return *actual, nil
 	case *interface{}:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
-		value = *actual
+		return *actual, nil
 	case *bool:
 		if actual == nil {
-			value = nil
+			return nil, nil
 		}
-		value = bool(*actual)
+		return *actual, nil
 	default:
-		return nil, fmt.Errorf("extractvalue - unsupported type %T", actual)
+		return nil, fmt.Errorf("extractValue: unsupported type %T", actual)
 	}
-	return value, nil
 }
 
 func extractKeyValue(value interface{}) (interface{}, error) {
 	switch actual := value.(type) {
 	case *string:
 		if actual == nil {
-			value = nil
+			return "", nil
 		}
-		value = *actual
+		return *actual, nil
 	}
 	return value, nil
 }

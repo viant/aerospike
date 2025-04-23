@@ -663,6 +663,27 @@ func Test_QueryContext(t *testing.T) {
 
 	var testCases = tstCases{
 		{
+			description: "query with pk as a empty string ptr",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM authCode",
+				"INSERT INTO authCode(Code,ClientId,UserId) VALUES(?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{"code01", "client01", "user01"},
+			},
+			querySQL:    "SELECT * FROM authCode WHERE PK = ?",
+			queryParams: []interface{}{nullStringPtr()},
+
+			expect: []interface{}{},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := AuthCode{}
+				err := r.Scan(&foo.Code, &foo.ClientId, &foo.UserId)
+				return &foo, err
+			},
+		},
+		{
 			description: "query with pk as a string ptr",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			init: []string{
@@ -2541,3 +2562,5 @@ func intPtr(i int) *int {
 func stringPtr(s string) *string {
 	return &s
 }
+
+func nullStringPtr() *string { return nil }
