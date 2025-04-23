@@ -421,9 +421,12 @@ func (s *Statement) buildKeys() ([]*as.Key, error) {
 	var result = make([]*as.Key, len(s.pkValues))
 	for i, item := range s.pkValues {
 
-		itemValue, err := extractValue(item)
+		keyValue, err := extractKeyValue(item)
+		if err != nil {
+			return nil, err
+		}
 
-		key, err := as.NewKey(s.namespace, s.set, itemValue)
+		key, err := as.NewKey(s.namespace, s.set, keyValue)
 		if err != nil {
 			return nil, err
 		}

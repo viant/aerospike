@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 var namespace = "ns_memory"
 
 type (
@@ -474,6 +478,12 @@ func Test_QueryContext(t *testing.T) {
 		Name string
 	}
 
+	type Foo2 struct {
+		Id     int
+		Name   string
+		Actual bool
+	}
+
 	type Message struct {
 		Id   int    `aerospike:"id,pk=true" `
 		Seq  int    `aerospike:"seq,arrayindex" `
@@ -551,10 +561,22 @@ func Test_QueryContext(t *testing.T) {
 		Name string
 	}
 
+	type Abc2 struct {
+		Id   int
+		Name string
+		Desc string `aerospike:"-"`
+	}
+
 	type User struct {
 		UID    string `aerospike:"uid,pk"`
 		Email  string `aerospike:"email,secondaryIndex"`
 		Active bool   `aerospike:"active"`
+	}
+
+	type User2 struct {
+		UID    string `aerospike:"uid,pk"`
+		Email  string `aerospike:"email,secondaryIndex"`
+		Active *bool  `aerospike:"active"`
 	}
 
 	type Bar struct {
@@ -598,12 +620,19 @@ func Test_QueryContext(t *testing.T) {
 		Count    int         `aerospike:"count,component"`
 	}
 
+	type AuthCode struct {
+		Code     string `aerospike:"code,pk" sqlx:"code,primarykey" json:"code,omitempty"` // the random auth code value
+		ClientId string `aerospike:"client_id" json:"client_id,omitempty"`                 // OAuth client that requested it
+		UserId   string `aerospike:"user_id" json:"user_id,omitempty"`                     // the authenticated user's ID (sub)
+	}
+
 	var sets = []*parameterizedQuery{
 		{SQL: "REGISTER SET Signal2 AS ?", params: []interface{}{Signal2{}}},
 		{SQL: "REGISTER SET Signal AS ?", params: []interface{}{Signal{}}},
 		{SQL: "REGISTER SET Agg/Values AS ?", params: []interface{}{Agg{}}},
 		{SQL: "REGISTER SET Doc AS ?", params: []interface{}{Doc{}}},
 		{SQL: "REGISTER SET Foo AS ?", params: []interface{}{Foo{}}},
+		{SQL: "REGISTER SET Foo2 AS ?", params: []interface{}{Foo2{}}},
 		{SQL: "REGISTER SET Baz AS ?", params: []interface{}{Baz{}}},
 		{SQL: "REGISTER SET SimpleAgg AS ?", params: []interface{}{SimpleAgg{}}},
 		{SQL: "REGISTER SET BazUnix AS ?", params: []interface{}{BazUnix{}}},
@@ -615,9 +644,12 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET Msg AS ?", params: []interface{}{Message{}}},
 		{SQL: "REGISTER SET WITH TTL 2 Abc AS struct{Id int; Name string}"},
 		{SQL: "REGISTER SET users AS ?", params: []interface{}{User{}}},
+		{SQL: "REGISTER SET users2 AS ?", params: []interface{}{User2{}}},
+		{SQL: "REGISTER SET Abc2 AS ?", params: []interface{}{Abc2{}}},
 		{SQL: "REGISTER SET bar AS ?", params: []interface{}{Bar{}}},
 		{SQL: "REGISTER SET barPtr AS ?", params: []interface{}{BarPtr{}}},
 		{SQL: "REGISTER SET barDoublePtr AS struct { Id int `aerospike:\"id,pk=true\"`; Seq int `aerospike:\"seq,mapKey\"`; Amount **int `aerospike:\"amount\"`; Price **float64 `aerospike:\"price\"`; Name **string `aerospike:\"name\"`; Time **time.Time `aerospike:\"time\"` }", params: []interface{}{}},
+		{SQL: "REGISTER SET authCode AS ?", params: []interface{}{AuthCode{}}},
 	}
 
 	type CountRecGroup struct {
@@ -630,7 +662,97 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = tstCases{
+		{
+			description: "query with pk as a string ptr",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM authCode",
+				"INSERT INTO authCode(Code,ClientId,UserId) VALUES(?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{"code01", "client01", "user01"},
+			},
+			querySQL:    "SELECT * FROM authCode WHERE PK = ?",
+			queryParams: []interface{}{stringPtr("code01")},
 
+			expect: []interface{}{
+				&AuthCode{Code: "code01", ClientId: "client01", UserId: "user01"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := AuthCode{}
+				err := r.Scan(&foo.Code, &foo.ClientId, &foo.UserId)
+				return &foo, err
+			},
+		},
+		{
+			description: "query with pk as a string",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM authCode",
+				"INSERT INTO authCode(Code,ClientId,UserId) VALUES(?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{"code01", "client01", "user01"},
+			},
+			querySQL:    "SELECT * FROM authCode WHERE PK = ?",
+			queryParams: []interface{}{"code01"},
+			expect: []interface{}{
+				&AuthCode{Code: "code01", ClientId: "client01", UserId: "user01"},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := AuthCode{}
+				err := r.Scan(&foo.Code, &foo.ClientId, &foo.UserId)
+				return &foo, err
+			},
+		},
+		{
+			description: "insert bool value",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM Foo2",
+				"INSERT INTO Foo2(Id,Name,Actual) VALUES(?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, "foo2", true},
+			},
+			querySQL:    "SELECT * FROM Foo2 WHERE PK = ?",
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Foo2{Id: 1, Name: "foo2", Actual: true},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := Foo2{}
+				err := r.Scan(&foo.Id, &foo.Name, &foo.Actual)
+				return &foo, err
+			},
+		},
+		{
+			description: "update bool value",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			init: []string{
+				"DELETE FROM Foo2",
+				"INSERT INTO Foo2(Id,Name,Actual) VALUES(?,?,?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, "foo22", false},
+			},
+			execSQL:     "UPDATE Foo2 SET Actual = ? WHERE PK = ?",
+			execParams:  []interface{}{true, 1},
+			querySQL:    "SELECT * FROM Foo2 WHERE PK = ?",
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Foo2{Id: 1, Name: "foo22", Actual: true},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				foo := Foo2{}
+				err := r.Scan(&foo.Id, &foo.Name, &foo.Actual)
+				return &foo, err
+			},
+		},
 		{
 			description: "wrapepd count with group by",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,

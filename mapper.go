@@ -214,9 +214,20 @@ func extractValue(value interface{}) (interface{}, error) {
 		if actual == nil {
 			value = nil
 		}
-		value = bool(*actual)	
+		value = bool(*actual)
 	default:
 		return nil, fmt.Errorf("extractvalue - unsupported type %T", actual)
+	}
+	return value, nil
+}
+
+func extractKeyValue(value interface{}) (interface{}, error) {
+	switch actual := value.(type) {
+	case *string:
+		if actual == nil {
+			value = nil
+		}
+		value = *actual
 	}
 	return value, nil
 }
