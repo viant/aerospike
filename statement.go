@@ -420,7 +420,10 @@ func (s *Statement) buildRangeFilter(exprValues []interface{}, name string) (*ra
 func (s *Statement) buildKeys() ([]*as.Key, error) {
 	var result = make([]*as.Key, len(s.pkValues))
 	for i, item := range s.pkValues {
-		key, err := as.NewKey(s.namespace, s.set, item)
+
+		itemValue, err := extractValue(item)
+
+		key, err := as.NewKey(s.namespace, s.set, itemValue)
 		if err != nil {
 			return nil, err
 		}
