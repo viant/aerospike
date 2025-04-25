@@ -321,7 +321,7 @@ func newQueryMapper(recordType reflect.Type, aQuery *query.Select, typeMapper *m
 		pk:              typeMapper.pk,
 		pseudoColumns:   make(map[string]interface{}),
 		aggregateColumn: make(map[string]*expr.Call),
-		groupBy:         typeMapper.groupBy,
+		groupBy:         []int{},
 	}
 	for i := 0; i < len(list); i++ {
 		item := list[i]
@@ -387,7 +387,7 @@ func newQueryMapper(recordType reflect.Type, aQuery *query.Select, typeMapper *m
 				return nil, fmt.Errorf("unsupported group by expression type: %T, only position based group by is supported", actual)
 			}
 		}
-		typeMapper.groupBy = ret.groupBy
+
 		if len(ret.groupBy) != 1 {
 			return nil, fmt.Errorf("unsupported group by expression type: %T, only single group by is supported", aQuery.GroupBy)
 		}

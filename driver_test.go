@@ -9,7 +9,6 @@ import (
 	"github.com/viant/toolbox"
 	"log"
 	"sort"
-	"sync"
 	"testing"
 	"time"
 )
@@ -662,6 +661,30 @@ func Test_QueryContext(t *testing.T) {
 	}
 
 	var testCases = tstCases{
+		{
+			description: "insert record with ignored field",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			execParams:  []interface{}{1},
+			querySQL:    "SELECT * FROM Abc2 WHERE PK = ?",
+			init: []string{
+				"DELETE FROM Abc2",
+				"INSERT INTO Abc2(Id,Name) VALUES(?, ?)",
+			},
+			initParams: [][]interface{}{
+				{},
+				{1, "abc2"},
+			},
+			queryParams: []interface{}{1},
+			expect: []interface{}{
+				&Abc2{Id: 1, Name: "abc2", Desc: ""},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				abc := Abc2{}
+				err := r.Scan(&abc.Id, &abc.Name)
+				return &abc, err
+			},
+			sleepSec: 3,
+		},
 		{
 			description: "query with pk as a empty string ptr",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
@@ -2356,12 +2379,9 @@ func Test_QueryContext(t *testing.T) {
 
 func (s tstCases) runTest(t *testing.T) {
 	ctx := context.Background()
-	wg := sync.WaitGroup{}
 	for _, tc := range s {
-		wg.Add(1)
 		fmt.Printf("running test: %v\n", tc.description)
 		t.Run(tc.description, func(t *testing.T) {
-			defer wg.Done()
 			if tc.truncateNamespaces {
 				err := truncateNamespace(tc.dsn)
 				if !assert.Nil(t, err, tc.description) {
@@ -2439,7 +2459,6 @@ func (s tstCases) runTest(t *testing.T) {
 
 			}
 		})
-		wg.Wait()
 	}
 }
 
