@@ -4,23 +4,107 @@ import (
 	"database/sql/driver"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
+	ainsert "github.com/viant/aerospike/insert"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
+	"strings"
 	"sync"
 )
 
-func (s *Statement) prepareInsert(sql string) error {
-	var err error
-	if s.insert, err = sqlparser.ParseInsert(sql); err != nil {
-		return err
+func (s *Statement) prepareInsert(sql string, c *connection) error {
+
+	if c.insertCache == nil {
+		parsed, err := sqlparser.ParseInsert(sql)
+		if err != nil {
+			return fmt.Errorf("prepareInsert parse: %w", err)
+		}
+
+		s.insert = &ainsert.Statement{Statement: parsed}
+		s.setSet(sqlparser.Stringify(parsed.Target.X))
+		return nil
 	}
-	s.setSet(sqlparser.Stringify(s.insert.Target.X))
+
+	var stmt *ainsert.Statement
+	kind, key, placeholderCount := extractKindAndKey(sql)
+
+	cachedStmt, isCached := c.insertCache.Get(key)
+
+	if isCached {
+		stmt = cachedStmt.(*ainsert.Statement)
+	} else {
+		parsed, err := sqlparser.ParseInsert(sql)
+		if err != nil {
+			return fmt.Errorf("prepareInsert parse failed: %w", err)
+		}
+		stmt = ainsert.NewStatement(parsed)
+	}
+
+	if kind == ainsert.ParameterizedValuesOnly {
+		if isCached {
+			stmt = stmt.CloneForValuesOnly(placeholderCount)
+		} else {
+			stmt.PrepareValuesOnly(placeholderCount)
+		}
+	}
+
+	if !isCached {
+		c.insertCache.Add(key, stmt)
+	}
+
+	s.insert = stmt
+	s.setSet(sqlparser.Stringify(stmt.Target.X))
 	return nil
+}
+
+func extractKindAndKey(sql string) (ainsert.Kind, string, int) {
+
+	up := strings.ToUpper(sql)
+	idx := strings.LastIndex(up, "VALUES")
+	if idx < 0 {
+		return "", sql, 0
+	}
+
+	valuesStartIdx := idx + len("VALUES")
+
+	ending := "?)"
+	valuesEndIdx := strings.LastIndex(sql, ending)
+	if valuesEndIdx == -1 {
+		return "", sql, 0
+	}
+
+	valuesEndIdx += len(ending)
+
+	if !isPlaceholderList(sql[valuesStartIdx:valuesEndIdx]) {
+		return "", sql, 0
+	}
+
+	placeholderCount := strings.Count(sql[valuesStartIdx:valuesEndIdx], "?")
+	allPlaceholderCount := strings.Count(sql, "?")
+	if placeholderCount != allPlaceholderCount {
+		return "", sql, 0
+	}
+
+	// that’s intentional - one key per all placeholders numbers
+	key := sql[:valuesStartIdx] + "#PLACEHOLDERS#" + sql[valuesEndIdx:]
+
+	return ainsert.ParameterizedValuesOnly, key, placeholderCount
+}
+
+func isPlaceholderList(s string) bool {
+	for _, r := range s {
+		switch r {
+		case '(', ')', ',', '?', ' ', '\t', '\n', '\r':
+			// ok
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 
-	batchCount := len(s.insert.Values) / len(s.insert.Columns)
+	batchCount := s.insert.ValuesCnt() / len(s.insert.Columns)
 	var groups = make(map[interface{}][]map[interface{}]map[interface{}]interface{})
 	argIndex := 0
 
@@ -345,10 +429,10 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		return fmt.Errorf("unable to find primary mapKey field")
 	}
 	isMerge := len(s.insert.OnDuplicateKeyUpdate) > 0
-	batchCount := len(s.insert.Values) / len(s.insert.Columns)
-	mod := len(s.insert.Values) % len(s.insert.Columns)
+	batchCount := s.insert.ValuesCnt() / len(s.insert.Columns)
+	mod := s.insert.ValuesCnt() % len(s.insert.Columns)
 	if mod != 0 {
-		return fmt.Errorf("invalid insert values count: %v, expected multiple of %v", len(s.insert.Values), len(s.insert.Columns))
+		return fmt.Errorf("invalid insert values count: %v, expected multiple of %v", s.insert.ValuesCnt(), len(s.insert.Columns))
 	}
 	if s.writeLimiter != nil {
 		defer s.writeLimiter.release()
@@ -442,7 +526,7 @@ func (s *Statement) populateInsertBins(args []driver.NamedValue, argIndex *int) 
 		if aField == nil {
 			return nil, fmt.Errorf("unable to find field %v in type %T", column, s.recordType)
 		}
-		columnValue := s.insert.Values[i]
+		columnValue := s.insert.ValueAt(i)
 		var value interface{}
 		if columnValue.IsPlaceholder() {
 			value = args[*argIndex].Value

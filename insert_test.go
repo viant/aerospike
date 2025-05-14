@@ -3,7 +3,9 @@ package aerospike
 import (
 	"context"
 	"database/sql"
+	"github.com/hashicorp/golang-lru"
 	"github.com/stretchr/testify/assert"
+	ainsert "github.com/viant/aerospike/insert"
 	"strings"
 	"testing"
 )
@@ -117,4 +119,207 @@ func perfTestData() []*PerfTest {
 		}
 	}
 	return items
+}
+
+// prepareInsert
+func Test_prepareInsert_handlesInvalidSQLInPrepareInsert(t *testing.T) {
+	statement := &Statement{}
+	connection := &connection{}
+
+	err := statement.prepareInsert("INVALID SQL", connection)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "prepareInsert parse")
+}
+
+func Test_prepareInsert_createsNewValuesOnlyStatementWhenNotCached(t *testing.T) {
+	statement := &Statement{}
+	cache, _ := lru.New(2)
+	connection := &connection{
+		insertCache: cache,
+	}
+	sql := "INSERT INTO table_name/Values (col1, col2) VALUES (?, ?)"
+
+	err := statement.prepareInsert(sql, connection)
+	assert.Nil(t, err)
+
+	expectedKey := "INSERT INTO table_name/Values (col1, col2) VALUES#PLACEHOLDERS#"
+	iActualStmt, ok := cache.Get(expectedKey)
+	assert.True(t, ok)
+	assert.NotNil(t, iActualStmt)
+	actualStmt, ok := iActualStmt.(*ainsert.Statement)
+	assert.True(t, ok)
+
+	assert.Equal(t, ainsert.ParameterizedValuesOnly, actualStmt.Kind)
+	assert.Equal(t, 2, actualStmt.ValuesOnlyPlaceholdersCnt)
+	assert.Nil(t, actualStmt.Values)
+	assert.NotNil(t, actualStmt.PlaceholderValue)
+	assert.Equal(t, cache.Len(), 1)
+}
+
+func Test_prepareInsert_createsValueOnlyStatementWhenCached(t *testing.T) {
+	statement := &Statement{}
+	cache, _ := lru.New(2)
+	connection := &connection{
+		insertCache: cache,
+	}
+	sql := "INSERT INTO table_name/Values (col1, col2) VALUES (?, ?)"
+
+	err := statement.prepareInsert(sql, connection)
+	assert.Nil(t, err)
+
+	sql2 := "INSERT INTO table_name/Values (col1, col2) VALUES (?, ?), (?, ?)"
+	err = statement.prepareInsert(sql2, connection)
+	assert.Nil(t, err)
+
+	actualStmt := statement.insert
+	assert.NotNil(t, actualStmt)
+
+	assert.Equal(t, ainsert.ParameterizedValuesOnly, actualStmt.Kind)
+	assert.Equal(t, 4, actualStmt.ValuesOnlyPlaceholdersCnt)
+	assert.Nil(t, actualStmt.Values)
+	assert.NotNil(t, actualStmt.PlaceholderValue)
+	assert.Equal(t, 1, cache.Len())
+}
+
+func Test_prepareInsert_createsNewNoValuesOnlyStatementWhenNotCached(t *testing.T) {
+	statement := &Statement{}
+	cache, _ := lru.New(2)
+	connection := &connection{
+		insertCache: cache,
+	}
+	sql := "INSERT INTO table_name/Values (col1, col2) VALUES (1, 2)"
+
+	err := statement.prepareInsert(sql, connection)
+	assert.Nil(t, err)
+
+	expectedKey := "INSERT INTO table_name/Values (col1, col2) VALUES (1, 2)"
+	iActualStmt, ok := cache.Get(expectedKey)
+	assert.True(t, ok)
+	assert.NotNil(t, iActualStmt)
+	actualStmt, ok := iActualStmt.(*ainsert.Statement)
+	assert.True(t, ok)
+
+	assert.Equal(t, ainsert.Kind(""), actualStmt.Kind)
+	assert.Equal(t, 0, actualStmt.ValuesOnlyPlaceholdersCnt)
+	assert.NotNil(t, actualStmt.Values)
+	assert.Equal(t, 2, len(actualStmt.Values))
+	assert.Nil(t, actualStmt.PlaceholderValue)
+	assert.Equal(t, 1, cache.Len())
+}
+
+func Test_prepareInsert_createsNoValueOnlyStatementWhenCached_02(t *testing.T) {
+	statement := &Statement{}
+	cache, _ := lru.New(2)
+	connection := &connection{
+		insertCache: cache,
+	}
+	sql := "INSERT INTO table_name/Values (col1, col2) VALUES (1, 2)"
+
+	err := statement.prepareInsert(sql, connection)
+	assert.Nil(t, err)
+
+	sql2 := "INSERT INTO table_name/Values (col1, col2) VALUES (1, 2), (3,4)"
+	err = statement.prepareInsert(sql2, connection)
+	assert.Nil(t, err)
+
+	actualStmt := statement.insert
+	assert.NotNil(t, actualStmt)
+
+	assert.Equal(t, ainsert.Kind(""), actualStmt.Kind)
+	assert.Equal(t, 0, actualStmt.ValuesOnlyPlaceholdersCnt)
+	assert.NotNil(t, actualStmt.Values)
+	assert.Equal(t, 4, len(actualStmt.Values))
+	assert.Nil(t, actualStmt.PlaceholderValue)
+	assert.Equal(t, 2, cache.Len())
+}
+
+func Test_prepareInsert_createsNoValueOnlyStatementWhenCached(t *testing.T) {
+	statement := &Statement{}
+	cache, _ := lru.New(2)
+	connection := &connection{
+		insertCache: cache,
+	}
+	sql := "INSERT INTO table_name/Values (col1, col2) VALUES (1, 2)"
+
+	err := statement.prepareInsert(sql, connection)
+	assert.Nil(t, err)
+
+	sql2 := "INSERT INTO table_name/Values (col1, col2) VALUES (1, 2)"
+	err = statement.prepareInsert(sql2, connection)
+	assert.Nil(t, err)
+
+	actualStmt := statement.insert
+	assert.NotNil(t, actualStmt)
+
+	assert.Equal(t, ainsert.Kind(""), actualStmt.Kind)
+	assert.Equal(t, 0, actualStmt.ValuesOnlyPlaceholdersCnt)
+	assert.NotNil(t, actualStmt.Values)
+	assert.Equal(t, 2, len(actualStmt.Values))
+	assert.Nil(t, actualStmt.PlaceholderValue)
+	assert.Equal(t, 1, cache.Len())
+}
+
+func Test_prepareInsert_handlesNilInsertCache(t *testing.T) {
+	statement := &Statement{}
+	connection := &connection{
+		insertCache: nil,
+	}
+	sql := "INSERT INTO table_name/Values (col1, col2) VALUES (?, ?)"
+
+	err := statement.prepareInsert(sql, connection)
+	assert.Nil(t, err)
+	actualStmt := statement.insert
+	assert.NotNil(t, actualStmt)
+	assert.Equal(t, ainsert.Kind(""), actualStmt.Kind)
+	assert.Equal(t, 0, actualStmt.ValuesOnlyPlaceholdersCnt)
+	assert.NotNil(t, actualStmt.Values)
+	assert.Equal(t, 2, len(actualStmt.Values))
+	assert.Nil(t, actualStmt.PlaceholderValue)
+}
+
+// extractKindAndKey
+func Test_extractKindAndKey_00(t *testing.T) {
+	kind, key, placeholderCount := extractKindAndKey("INSERT INTO table_name/Values (col1, col2) VALUES")
+	assert.Equal(t, ainsert.Kind(""), kind)
+	assert.Equal(t, "INSERT INTO table_name/Values (col1, col2) VALUES", key)
+	assert.Equal(t, 0, placeholderCount)
+}
+
+func Test_extractKindAndKey_01(t *testing.T) {
+	kind, key, placeholderCount := extractKindAndKey("INSERT INTO table_name/Values (col1, col2) VALUES (?, ?)")
+	assert.Equal(t, ainsert.ParameterizedValuesOnly, kind)
+	assert.Equal(t, "INSERT INTO table_name/Values (col1, col2) VALUES#PLACEHOLDERS#", key)
+	assert.Equal(t, 2, placeholderCount)
+}
+
+func Test_extractKindAndKey_01B(t *testing.T) {
+	kind, key, placeholderCount := extractKindAndKey("INSERT INTO table_name/Values (col1, col2) VALUES (1, 2)")
+	assert.Equal(t, ainsert.Kind(""), kind)
+	assert.Equal(t, "INSERT INTO table_name/Values (col1, col2) VALUES (1, 2)", key)
+	assert.Equal(t, 0, placeholderCount)
+}
+
+func Test_extractKindAndKey_02(t *testing.T) {
+	kind, key, placeholderCount := extractKindAndKey("INSERT INTO table_name/Values (col1, col2) VALUES (?, ?),(?, ?) AS new ON DUPLICATE KEY UPDATE count = count + new.count")
+	assert.Equal(t, ainsert.ParameterizedValuesOnly, kind)
+	assert.Equal(t, "INSERT INTO table_name/Values (col1, col2) VALUES#PLACEHOLDERS# AS new ON DUPLICATE KEY UPDATE count = count + new.count", key)
+	assert.Equal(t, 4, placeholderCount)
+}
+
+func Test_extractKindAndKey_02B(t *testing.T) {
+	kind, key, placeholderCount := extractKindAndKey("INSERT INTO table_name/Values (col1, col2) VALUES (?, ?),(?, ?) AS new ON DUPLICATE KEY UPDATE count = count + ?")
+	assert.Equal(t, ainsert.Kind(""), kind)
+	assert.Equal(t, "INSERT INTO table_name/Values (col1, col2) VALUES (?, ?),(?, ?) AS new ON DUPLICATE KEY UPDATE count = count + ?", key)
+	assert.Equal(t, 0, placeholderCount)
+}
+
+// isPlaceholderList
+func Test_isPlaceholderList_01(t *testing.T) {
+	isValid := isPlaceholderList("INVALID PLACEHOLDER LIST")
+	assert.False(t, isValid)
+}
+
+func Test_isPlaceholderList_02(t *testing.T) {
+	isValid := isPlaceholderList("(?, ?, ?), (?, ?, ?)")
+	assert.True(t, isValid)
 }

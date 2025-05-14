@@ -10,14 +10,16 @@ import (
 
 // Config represent Connection config
 type Config struct {
-	host               string
-	port               int
-	namespace          string
-	batchSize          int
-	concurrency        int
-	maxConcurrentWrite int
-	disablePool        bool
-	Values             url.Values
+	host                  string
+	port                  int
+	namespace             string
+	batchSize             int
+	concurrency           int
+	maxConcurrentWrite    int
+	disablePool           bool
+	Values                url.Values
+	disableCache          bool
+	insertCacheMaxEntries int
 
 	// expiry options
 	/*

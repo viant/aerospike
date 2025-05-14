@@ -5,17 +5,16 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"github.com/viant/sqlparser/index"
-	"github.com/viant/sqlparser/table"
-
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/aerospike/aerospike-client-go/v6/types"
+	ainsert "github.com/viant/aerospike/insert"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/delete"
 	"github.com/viant/sqlparser/expr"
-	"github.com/viant/sqlparser/insert"
+	"github.com/viant/sqlparser/index"
 	"github.com/viant/sqlparser/node"
 	"github.com/viant/sqlparser/query"
+	"github.com/viant/sqlparser/table"
 	"github.com/viant/sqlparser/update"
 	"github.com/viant/x"
 	"github.com/viant/xreflect"
@@ -47,7 +46,7 @@ type Statement struct {
 	kind             sqlparser.Kind
 	sets             *registry
 	query            *query.Select
-	insert           *insert.Statement
+	insert           *ainsert.Statement
 	update           *update.Statement
 	delete           *delete.Statement
 	truncate         *table.Truncate

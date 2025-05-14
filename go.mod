@@ -6,7 +6,11 @@ toolchain go1.22.8
 
 require (
 	github.com/aerospike/aerospike-client-go/v6 v6.15.1
+	github.com/francoispqt/gojay v1.2.13
+	github.com/hashicorp/golang-lru v0.5.1
 	github.com/stretchr/testify v1.9.0
+	github.com/viant/afs v1.25.1
+	github.com/viant/assertly v0.9.0
 	github.com/viant/parsly v0.3.3-0.20240717150634-e1afaedb691b
 	github.com/viant/sqlparser v0.7.4
 	github.com/viant/structology v0.5.6-0.20240802174922-5eb157550455
@@ -23,6 +27,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
+	golang.org/x/crypto v0.22.0 // indirect
 	golang.org/x/mod v0.16.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect

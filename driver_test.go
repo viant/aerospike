@@ -662,6 +662,63 @@ func Test_QueryContext(t *testing.T) {
 
 	var testCases = tstCases{
 		{
+			description: "array batch merge insert stmt cache check",
+			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal2/Values WHERE pk = ?",
+			queryParams: []interface{}{"1"},
+			init: []string{
+				"TRUNCATE TABLE Signal2 ",
+				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
+				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?)",
+				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
+				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE count = count + new.count",
+			},
+			initParams: [][]interface{}{
+				{},
+				{
+					"1", 1, 1, 1,
+					"1", 2, 1, 2,
+				},
+				{
+					"1", 1, 1, 1,
+				},
+				{
+					"1", 3, 1, 1,
+					"1", 4, 1, 2,
+				},
+				{
+					"1", 3, 0, 100,
+					"1", 3, 1, 100,
+					"1", 4, 0, 200,
+				},
+			},
+			execSQL: "INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE count = count + new.count",
+			execParams: []interface{}{
+				"1", 1, 0, 5,
+				"1", 1, 1, 10,
+				"1", 2, 1, 20,
+				"1", 2, 1, 30},
+
+			expect: []interface{}{
+				&Signal2{ID: "1", KeyValue: 1, Bucket: 0, Count: 5},
+				&Signal2{ID: "1", KeyValue: 1, Bucket: 1, Count: 11},
+
+				&Signal2{ID: "1", KeyValue: 2, Bucket: 0, Count: 0},
+				&Signal2{ID: "1", KeyValue: 2, Bucket: 1, Count: 52},
+
+				&Signal2{ID: "1", KeyValue: 3, Bucket: 0, Count: 100},
+				&Signal2{ID: "1", KeyValue: 3, Bucket: 1, Count: 101},
+
+				&Signal2{ID: "1", KeyValue: 4, Bucket: 0, Count: 200},
+				&Signal2{ID: "1", KeyValue: 4, Bucket: 1, Count: 2},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := Signal2{}
+				err := r.Scan(&agg.ID, &agg.KeyValue, &agg.Bucket, &agg.Count)
+				return &agg, err
+			},
+		},
+		{
 			description: "insert record with ignored field",
 			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
 			execParams:  []interface{}{1},
@@ -2366,7 +2423,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 	}
 
-	//testCases = testCases[:1]
+	//testCases = testCases[0:1]
 
 	for _, tc := range testCases {
 		if len(tc.sets) == 0 {

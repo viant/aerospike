@@ -76,12 +76,11 @@ func (d Driver) Open(dsn string) (driver.Conn, error) {
 	}
 
 	limiter := writeLimiter.getLimiter(dsn, cfg.maxConcurrentWrite)
-	ret = &connection{
-		cfg:          cfg,
-		client:       client,
-		sets:         newRegistry(),
-		writeLimiter: limiter,
+	ret, err = newConnection(cfg, client, limiter)
+	if err != nil {
+		return nil, err
 	}
+
 	if !cfg.disablePool {
 		mutex.Lock()
 		connections[dsn] = ret

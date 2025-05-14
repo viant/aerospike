@@ -5,7 +5,9 @@ import (
 	"database/sql/driver"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
+	"github.com/hashicorp/golang-lru"
 	"github.com/viant/sqlparser"
+	"sync"
 )
 
 type connection struct {
@@ -13,6 +15,8 @@ type connection struct {
 	client       *as.Client
 	sets         *registry
 	writeLimiter *limiter
+	insertCache  *lru.Cache // holds *insert.Statement values
+	mu           sync.RWMutex
 }
 
 // Prepare returns a prepared statement, bound to this connection.
@@ -45,7 +49,7 @@ func (c *connection) PrepareContext(ctx context.Context, SQL string) (driver.Stm
 			return nil, err
 		}
 	case sqlparser.KindInsert:
-		if err := stmt.prepareInsert(SQL); err != nil {
+		if err := stmt.prepareInsert(SQL, c); err != nil {
 			return nil, err
 		}
 	case sqlparser.KindUpdate:
@@ -113,4 +117,24 @@ func (c *connection) ResetSession(ctx context.Context) error {
 // IsValid check is connection is valid
 func (c *connection) IsValid() bool {
 	return true
+}
+
+func newConnection(cfg *Config, client *as.Client, limiter *limiter) (*connection, error) {
+	var err error
+	var insCache *lru.Cache
+	if !cfg.disableCache {
+		insCache, err = lru.New(cfg.insertCacheMaxEntries)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	ret := &connection{
+		cfg:          cfg,
+		client:       client,
+		sets:         newRegistry(),
+		writeLimiter: limiter,
+		insertCache:  insCache,
+	}
+	return ret, nil
 }

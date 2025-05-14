@@ -7,6 +7,12 @@ import (
 	"strings"
 )
 
+const (
+	defaultInsertCacheMaxEntries = 1000
+	defaultBatchSize             = 1000
+	defaultConcurrency           = 10
+)
+
 func ParseDSN(dsn string) (*Config, error) {
 	URL, err := url.Parse(dsn)
 	if err != nil {
@@ -37,12 +43,13 @@ func ParseDSN(dsn string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		host:        host,
-		port:        iPort,
-		namespace:   namespace,
-		batchSize:   1000,
-		concurrency: 10,
-		Values:      URL.Query(),
+		host:                  host,
+		port:                  iPort,
+		namespace:             namespace,
+		batchSize:             defaultBatchSize,
+		concurrency:           defaultConcurrency,
+		Values:                URL.Query(),
+		insertCacheMaxEntries: defaultInsertCacheMaxEntries,
 	}
 
 	if len(cfg.Values) > 0 {
@@ -66,6 +73,18 @@ func ParseDSN(dsn string) (*Config, error) {
 		if v, ok := cfg.Values["batchSize"]; ok {
 			if cfg.batchSize, err = strconv.Atoi(v[0]); err != nil {
 				return nil, fmt.Errorf("invalid dsn batchSize: %v", err)
+			}
+		}
+		if v, ok := cfg.Values["insertCacheMaxEntries"]; ok {
+			if cfg.insertCacheMaxEntries, err = strconv.Atoi(v[0]); err != nil {
+				return nil, fmt.Errorf("invalid dsn insertCacheMaxEntries: %v", err)
+			}
+		}
+		if v, ok := cfg.Values["disableCache"]; ok {
+			if len(v) > 0 {
+				cfg.disableCache = v[0] == "true"
+			} else {
+				cfg.disableCache = true
 			}
 		}
 	}

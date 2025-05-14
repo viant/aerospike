@@ -21,13 +21,16 @@ func Test_ParseDSN(t *testing.T) {
 			description: "dsn just with namespace",
 			dsn:         "aerospike://127.0.0.1:3000/namespace_abc",
 			expect: &Config{
-				host:               "127.0.0.1",
-				port:               3000,
-				namespace:          "namespace_abc",
-				batchSize:          1000,
-				concurrency:        10,
-				maxConcurrentWrite: 0,
-				Values:             url.Values{},
+				host:                  "127.0.0.1",
+				port:                  3000,
+				namespace:             "namespace_abc",
+				batchSize:             defaultBatchSize,
+				concurrency:           defaultConcurrency,
+				maxConcurrentWrite:    0,
+				Values:                url.Values{},
+				insertCacheMaxEntries: defaultInsertCacheMaxEntries,
+				disablePool:           false,
+				disableCache:          false,
 			},
 		},
 		{
@@ -36,6 +39,7 @@ func Test_ParseDSN(t *testing.T) {
 				"concurrency=10" +
 				"&batchSize=100" +
 				"&maxConcurrentWrite=5" +
+				"&insertCacheMaxEntries=17" +
 				"&clientPolConnectionQueueSize=200" +
 				"&clientPolTimeout=66" +
 				"&clientPolIdleTimeout=11" +
@@ -51,18 +55,24 @@ func Test_ParseDSN(t *testing.T) {
 				"&defWritePolTotalTimeout=401" +
 				"&defWritePolSocketTimeout=402" +
 				"&defWritePolMaxRetries=403" +
-				"&defWritePolSleepBetweenRetries=404",
+				"&defWritePolSleepBetweenRetries=404" +
+				"&disablePool=true" +
+				"&disableCache=true",
 			expect: &Config{
-				host:               "127.0.0.1",
-				port:               3000,
-				namespace:          "namespace_abcd",
-				batchSize:          100,
-				concurrency:        10,
-				maxConcurrentWrite: 5,
+				host:                  "127.0.0.1",
+				port:                  3000,
+				namespace:             "namespace_abcd",
+				batchSize:             100,
+				concurrency:           10,
+				maxConcurrentWrite:    5,
+				insertCacheMaxEntries: 17,
+				disablePool:           true,
+				disableCache:          true,
 				Values: url.Values{
 					"concurrency":                         []string{"10"},
 					"batchSize":                           []string{"100"},
 					"maxConcurrentWrite":                  []string{"5"},
+					"insertCacheMaxEntries":               []string{"17"},
 					"clientPolConnectionQueueSize":        []string{"200"},
 					"clientPolTimeout":                    []string{"66"},
 					"clientPolIdleTimeout":                []string{"11"},
@@ -79,6 +89,8 @@ func Test_ParseDSN(t *testing.T) {
 					"defWritePolSocketTimeout":            []string{"402"},
 					"defWritePolMaxRetries":               []string{"403"},
 					"defWritePolSleepBetweenRetries":      []string{"404"},
+					"disablePool":                         []string{"true"},
+					"disableCache":                        []string{"true"},
 				},
 			},
 		},
