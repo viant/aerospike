@@ -493,7 +493,7 @@ func (s *Statement) getKey(fields []*field, bins map[string]interface{}) interfa
 }
 
 func (s *Statement) cleanup() {
-	if s.insert != nil {
+	if s.insert != nil && s.cfg.disableCache {
 		s.insert.Values = nil
 		s.insert = nil
 	}

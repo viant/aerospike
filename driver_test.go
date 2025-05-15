@@ -19,6 +19,15 @@ func boolPtr(b bool) *bool {
 
 var namespace = "ns_memory"
 
+var dsnGlobal = "aerospike://127.0.0.1:3000/" + namespace
+
+var dsnParamsSet = []string{
+	"?disableCache=false&disablePool=false",
+	"?disableCache=true&disablePool=false",
+	"?disableCache=false&disablePool=true",
+	"?disableCache=true&disablePool=true",
+}
+
 type (
 	testCase struct {
 		description        string
@@ -104,7 +113,7 @@ func Test_Meta(t *testing.T) {
 	var testCases = tstCases{
 		{
 			description:   "metadata: all schemas - all namespaces in db",
-			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:           "", // dynamic
 			resetRegistry: true,
 			querySQL: `select
 		   '' catalog_name,
@@ -125,7 +134,7 @@ func Test_Meta(t *testing.T) {
 		},
 		{
 			description:   "metadata: 1 schema - 1 namespaces from db",
-			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:           "", // dynamic
 			resetRegistry: true,
 			querySQL: `select
 '' catalog_name,
@@ -147,7 +156,7 @@ where pk = '` + namespace + `'`,
 		},
 		{
 			description:        "metadata: all tables - all registered sets for current connection",
-			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:                "", // dynamic
 			resetRegistry:      true,
 			truncateNamespaces: true,
 			sets: []*parameterizedQuery{
@@ -183,7 +192,7 @@ from information_schema.tables`,
 		},
 		{
 			description:        "metadata: 2 tables - 2 registered sets for current connection",
-			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:                "", // dynamic
 			resetRegistry:      true,
 			truncateNamespaces: true,
 			sets: []*parameterizedQuery{
@@ -219,7 +228,7 @@ where pk in ('A02','A03')`,
 		},
 		{
 			description:        "metadata: all table columns - all registered set fields for current connection",
-			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:                "", // dynamic
 			resetRegistry:      true,
 			truncateNamespaces: true,
 			sets: []*parameterizedQuery{
@@ -286,7 +295,7 @@ where pk in ('A02','A03')`,
 		},
 		{
 			description:        "metadata: table columns for 2 tables - fields for 2 sets for current connection",
-			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:                "", // dynamic
 			resetRegistry:      true,
 			truncateNamespaces: true,
 			sets: []*parameterizedQuery{
@@ -354,7 +363,7 @@ where pk in ('A02','A03')`,
 		},
 		{
 			description:        "metadata: session",
-			dsn:                "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:                "", // dynamic
 			resetRegistry:      true,
 			truncateNamespaces: true,
 			sets: []*parameterizedQuery{
@@ -388,7 +397,7 @@ from information_schema.processlist`,
 		},
 		{
 			description:   "metadata: version",
-			dsn:           "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:           "", // dynamic
 			resetRegistry: true,
 			querySQL:      `select version from information_schema.serverinfo`,
 			queryParams:   []interface{}{},
@@ -404,7 +413,12 @@ from information_schema.processlist`,
 
 	//testCases = testCases[0:1]
 
-	testCases.runTest(t)
+	for _, set := range dsnParamsSet {
+		for _, tc := range testCases {
+			tc.dsn = dsnGlobal + set
+		}
+		testCases.runTest(t)
+	}
 
 }
 
@@ -415,7 +429,7 @@ func Test_ExecContext(t *testing.T) {
 		Name string
 	}
 
-	var testCase = []struct {
+	var testCases = []*struct {
 		description string
 		dsn         string
 		sql         string
@@ -424,206 +438,226 @@ func Test_ExecContext(t *testing.T) {
 	}{
 		{
 			description: "register inlined set",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "",                                                // dynamic
 			sql:         "REGISTER SET Bar AS struct{id int; name string}", //TODO is this struct usable when all fields are private?
 		},
 		{
 			description: "register named set",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			sql:         "REGISTER SET Foo AS ?",
 			params:      []interface{}{Foo{}},
 		},
 		{
 			description: "register inlined global set",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			sql:         "REGISTER GLOBAL SET Bar AS struct{id int; name string}",
 		},
 		{
 			description: "register named global set",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			sql:         "REGISTER GLOBAL SET Foo AS ?",
 			params:      []interface{}{Foo{}},
 		},
 		{
 			description: "register named global set with ttl",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			sql:         "REGISTER GLOBAL SET WITH TTL 100 Foo AS ?",
 			params:      []interface{}{Foo{}},
 		},
 		{
 			description: "register inlined global set with ttl",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			sql:         "REGISTER GLOBAL SET WITH TTL 100 Bar AS struct{id int; name string}",
 		},
 	}
 
-	for _, tc := range testCase {
-		//for _, tc := range testCase[0:1] {
-		t.Run(tc.description, func(t *testing.T) {
-			db, err := sql.Open("aerospike", tc.dsn)
-			if !assert.Nil(t, err, tc.description) {
-				return
-			}
-			assert.NotNil(t, db, tc.description)
-			_, err = db.ExecContext(context.Background(), tc.sql, tc.params...)
-			assert.Nil(t, err, tc.description)
-		})
+	for _, set := range dsnParamsSet {
+		for _, tc := range testCases {
+			tc.dsn = dsnGlobal + set
+		}
+
+		for _, tc := range testCases {
+			fmt.Printf("running test: %v with conn: %s\n", tc.description, tc.dsn)
+			//for _, tc := range testCase[0:1] {
+			t.Run(tc.description, func(t *testing.T) {
+				db, err := sql.Open("aerospike", tc.dsn)
+				if !assert.Nil(t, err, tc.description) {
+					return
+				}
+				assert.NotNil(t, db, tc.description)
+				_, err = db.ExecContext(context.Background(), tc.sql, tc.params...)
+				assert.Nil(t, err, tc.description)
+			})
+		}
 	}
+
 }
 
 func Test_QueryContext(t *testing.T) {
-	type Foo struct {
-		Id   int
-		Name string
-	}
 
-	type Foo2 struct {
-		Id     int
-		Name   string
-		Actual bool
-	}
+	type (
+		Foo struct {
+			Id   int
+			Name string
+		}
 
-	type Message struct {
-		Id   int    `aerospike:"id,pk=true" `
-		Seq  int    `aerospike:"seq,arrayindex" `
-		Body string `aerospike:"body"`
-	}
-	type Baz struct {
-		Id   int       `aerospike:"id,pk=true"`
-		Seq  int       `aerospike:"seq,mapKey" `
-		Name string    `aerospike:"name"`
-		Time time.Time `aerospike:"time"`
-	}
+		Foo2 struct {
+			Id     int
+			Name   string
+			Actual bool
+		}
 
-	type BazPtr struct {
-		Id   int        `aerospike:"id,pk=true"`
-		Seq  int        `aerospike:"seq,mapKey" `
-		Name string     `aerospike:"name"`
-		Time *time.Time `aerospike:"time"`
-	}
+		Message struct {
+			Id   int    `aerospike:"id,pk=true" `
+			Seq  int    `aerospike:"seq,arrayindex" `
+			Body string `aerospike:"body"`
+		}
+		Baz struct {
+			Id   int       `aerospike:"id,pk=true"`
+			Seq  int       `aerospike:"seq,mapKey" `
+			Name string    `aerospike:"name"`
+			Time time.Time `aerospike:"time"`
+		}
 
-	type BazDoublePtr struct {
-		Id   int         `aerospike:"id,pk=true"`
-		Seq  int         `aerospike:"seq,mapKey" `
-		Name string      `aerospike:"name"`
-		Time **time.Time `aerospike:"time"`
-	}
+		BazPtr struct {
+			Id   int        `aerospike:"id,pk=true"`
+			Seq  int        `aerospike:"seq,mapKey" `
+			Name string     `aerospike:"name"`
+			Time *time.Time `aerospike:"time"`
+		}
 
-	type BazUnix struct {
-		Id   int       `aerospike:"id,pk=true"`
-		Seq  int       `aerospike:"seq,mapKey" `
-		Name string    `aerospike:"name"`
-		Time time.Time `aerospike:"time,unixsec"`
-	}
+		BazDoublePtr struct {
+			Id   int         `aerospike:"id,pk=true"`
+			Seq  int         `aerospike:"seq,mapKey" `
+			Name string      `aerospike:"name"`
+			Time **time.Time `aerospike:"time"`
+		}
 
-	type BazUnixPtr struct {
-		Id   int        `aerospike:"id,pk=true"`
-		Seq  int        `aerospike:"seq,mapKey" `
-		Name string     `aerospike:"name"`
-		Time *time.Time `aerospike:"time,unixsec"`
-	}
+		BazUnix struct {
+			Id   int       `aerospike:"id,pk=true"`
+			Seq  int       `aerospike:"seq,mapKey" `
+			Name string    `aerospike:"name"`
+			Time time.Time `aerospike:"time,unixsec"`
+		}
 
-	type BazUnixDoublePtr struct {
-		Id   int         `aerospike:"id,pk=true"`
-		Seq  int         `aerospike:"seq,mapKey" `
-		Name string      `aerospike:"name"`
-		Time **time.Time `aerospike:"time,unixsec"`
-	}
+		BazUnixPtr struct {
+			Id   int        `aerospike:"id,pk=true"`
+			Seq  int        `aerospike:"seq,mapKey" `
+			Name string     `aerospike:"name"`
+			Time *time.Time `aerospike:"time,unixsec"`
+		}
 
-	type Qux struct {
-		Id    int      `aerospike:"id,pk=true"`
-		Seq   int      `aerospike:"seq,mapKey"`
-		Name  string   `aerospike:"name"`
-		List  []string `aerospike:"list"`
-		Slice []string `aerospike:"slice"`
-	}
+		BazUnixDoublePtr struct {
+			Id   int         `aerospike:"id,pk=true"`
+			Seq  int         `aerospike:"seq,mapKey" `
+			Name string      `aerospike:"name"`
+			Time **time.Time `aerospike:"time,unixsec"`
+		}
 
-	type Doc struct {
-		Id   int    `aerospike:"id,pk=true" `
-		Seq  int    `aerospike:"seq,mapKey" `
-		Name string `aerospike:"name" `
-	}
+		Qux struct {
+			Id    int      `aerospike:"id,pk=true"`
+			Seq   int      `aerospike:"seq,mapKey"`
+			Name  string   `aerospike:"name"`
+			List  []string `aerospike:"list"`
+			Slice []string `aerospike:"slice"`
+		}
 
-	type SimpleAgg struct {
-		Id     int `aerospike:"id,pk=true" `
-		Amount int `aerospike:"amount" `
-	}
-	type Agg struct {
-		Id     int `aerospike:"id,pk=true" `
-		Seq    int `aerospike:"seq,mapKey" `
-		Amount int `aerospike:"amount" `
-		Val    int `aerospike:"val" `
-	}
+		Doc struct {
+			Id   int    `aerospike:"id,pk=true" `
+			Seq  int    `aerospike:"seq,mapKey" `
+			Name string `aerospike:"name" `
+		}
 
-	type Abc struct {
-		Id   int
-		Name string
-	}
+		SimpleAgg struct {
+			Id     int `aerospike:"id,pk=true" `
+			Amount int `aerospike:"amount" `
+		}
+		Agg struct {
+			Id     int `aerospike:"id,pk=true" `
+			Seq    int `aerospike:"seq,mapKey" `
+			Amount int `aerospike:"amount" `
+			Val    int `aerospike:"val" `
+		}
 
-	type Abc2 struct {
-		Id   int
-		Name string
-		Desc string `aerospike:"-"`
-	}
+		Abc struct {
+			Id   int
+			Name string
+		}
 
-	type User struct {
-		UID    string `aerospike:"uid,pk"`
-		Email  string `aerospike:"email,secondaryIndex"`
-		Active bool   `aerospike:"active"`
-	}
+		Abc2 struct {
+			Id   int
+			Name string
+			Desc string `aerospike:"-"`
+		}
 
-	type User2 struct {
-		UID    string `aerospike:"uid,pk"`
-		Email  string `aerospike:"email,secondaryIndex"`
-		Active *bool  `aerospike:"active"`
-	}
+		User struct {
+			UID    string `aerospike:"uid,pk"`
+			Email  string `aerospike:"email,secondaryIndex"`
+			Active bool   `aerospike:"active"`
+		}
 
-	type Bar struct {
-		Id     int       `aerospike:"id,pk=true"`
-		Seq    int       `aerospike:"seq,mapKey"`
-		Amount int       `aerospike:"amount"`
-		Price  float64   `aerospike:"price"`
-		Name   string    `aerospike:"name"`
-		Time   time.Time `aerospike:"time"`
-	}
+		User2 struct {
+			UID    string `aerospike:"uid,pk"`
+			Email  string `aerospike:"email,secondaryIndex"`
+			Active *bool  `aerospike:"active"`
+		}
 
-	type BarPtr struct {
-		Id     int        `aerospike:"id,pk=true"`
-		Seq    int        `aerospike:"seq,mapKey"`
-		Amount *int       `aerospike:"amount"`
-		Price  *float64   `aerospike:"price"`
-		Name   *string    `aerospike:"name"`
-		Time   *time.Time `aerospike:"time"`
-	}
+		Bar struct {
+			Id     int       `aerospike:"id,pk=true"`
+			Seq    int       `aerospike:"seq,mapKey"`
+			Amount int       `aerospike:"amount"`
+			Price  float64   `aerospike:"price"`
+			Name   string    `aerospike:"name"`
+			Time   time.Time `aerospike:"time"`
+		}
 
-	type BarDoublePtr struct {
-		Id     int         `aerospike:"id,pk=true"`
-		Seq    int         `aerospike:"seq,mapKey"`
-		Amount **int       `aerospike:"amount"`
-		Price  **float64   `aerospike:"price"`
-		Name   **string    `aerospike:"name"`
-		Time   **time.Time `aerospike:"time"`
-	}
+		BarPtr struct {
+			Id     int        `aerospike:"id,pk=true"`
+			Seq    int        `aerospike:"seq,mapKey"`
+			Amount *int       `aerospike:"amount"`
+			Price  *float64   `aerospike:"price"`
+			Name   *string    `aerospike:"name"`
+			Time   *time.Time `aerospike:"time"`
+		}
 
-	type Signal struct {
-		ID       string      `aerospike:"id,pk=true"` //--> day,value
-		KeyValue interface{} `aerospike:"keyValue,mapKey"`
-		Bucket   int         `aerospike:"bucket,arrayIndex,arraySize=5"`
-		Count    int         `aerospike:"count,component"`
-	}
+		BarDoublePtr struct {
+			Id     int         `aerospike:"id,pk=true"`
+			Seq    int         `aerospike:"seq,mapKey"`
+			Amount **int       `aerospike:"amount"`
+			Price  **float64   `aerospike:"price"`
+			Name   **string    `aerospike:"name"`
+			Time   **time.Time `aerospike:"time"`
+		}
 
-	type Signal2 struct {
-		ID       string      `aerospike:"id,pk=true"` //--> day,value
-		KeyValue interface{} `aerospike:"keyValue,mapKey"`
-		Bucket   int         `aerospike:"bucket,arrayIndex,arraySize=2"`
-		Count    int         `aerospike:"count,component"`
-	}
+		Signal struct {
+			ID       string      `aerospike:"id,pk=true"` //--> day,value
+			KeyValue interface{} `aerospike:"keyValue,mapKey"`
+			Bucket   int         `aerospike:"bucket,arrayIndex,arraySize=5"`
+			Count    int         `aerospike:"count,component"`
+		}
 
-	type AuthCode struct {
-		Code     string `aerospike:"code,pk" sqlx:"code,primarykey" json:"code,omitempty"` // the random auth code value
-		ClientId string `aerospike:"client_id" json:"client_id,omitempty"`                 // OAuth client that requested it
-		UserId   string `aerospike:"user_id" json:"user_id,omitempty"`                     // the authenticated user's ID (sub)
-	}
+		Signal2 struct {
+			ID       string      `aerospike:"id,pk=true"` //--> day,value
+			KeyValue interface{} `aerospike:"keyValue,mapKey"`
+			Bucket   int         `aerospike:"bucket,arrayIndex,arraySize=2"`
+			Count    int         `aerospike:"count,component"`
+		}
+
+		AuthCode struct {
+			Code     string `aerospike:"code,pk" sqlx:"code,primarykey" json:"code,omitempty"` // the random auth code value
+			ClientId string `aerospike:"client_id" json:"client_id,omitempty"`                 // OAuth client that requested it
+			UserId   string `aerospike:"user_id" json:"user_id,omitempty"`                     // the authenticated user's ID (sub)
+		}
+
+		CountRecGroup struct {
+			ID    int
+			Count int
+		}
+
+		CountRec struct {
+			Count int
+		}
+	)
 
 	var sets = []*parameterizedQuery{
 		{SQL: "REGISTER SET Signal2 AS ?", params: []interface{}{Signal2{}}},
@@ -651,45 +685,53 @@ func Test_QueryContext(t *testing.T) {
 		{SQL: "REGISTER SET authCode AS ?", params: []interface{}{AuthCode{}}},
 	}
 
-	type CountRecGroup struct {
-		ID    int
-		Count int
-	}
-
-	type CountRec struct {
-		Count int
-	}
-
 	var testCases = tstCases{
 		{
-			description: "array batch merge insert stmt cache check",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			description: "literal insert cache check",
+			dsn:         "", // dynamic
+			execSQL:     "INSERT INTO SimpleAgg(id,amount) VALUES(1,1)",
+			execParams:  []interface{}{},
+			querySQL:    "SELECT id,amount FROM SimpleAgg WHERE PK IN(?)",
+			queryParams: []interface{}{1},
+			init: []string{
+				"DELETE FROM SimpleAgg",
+				"INSERT INTO SimpleAgg(id,amount) VALUES(1,1)",
+				"DELETE FROM SimpleAgg",
+			},
+			expect: []interface{}{
+				&SimpleAgg{Id: 1, Amount: 1},
+			},
+			scanner: func(r *sql.Rows) (interface{}, error) {
+				agg := SimpleAgg{}
+				err := r.Scan(&agg.Id, &agg.Amount)
+				return &agg, err
+			},
+		},
+
+		{
+			description: "parametrized insert cache check",
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal2/Values WHERE pk = ?",
 			queryParams: []interface{}{"1"},
 			init: []string{
 				"TRUNCATE TABLE Signal2 ",
-				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
 				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?)",
+				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?) AS new ON DUPLICATE KEY UPDATE count = count + new.count",
+				"TRUNCATE TABLE Signal2 ",
 				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?)",
-				"INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE count = count + new.count",
 			},
 			initParams: [][]interface{}{
 				{},
 				{
 					"1", 1, 1, 1,
-					"1", 2, 1, 2,
 				},
+				{
+					"1", 2, 1, 1,
+				},
+				{},
 				{
 					"1", 1, 1, 1,
-				},
-				{
-					"1", 3, 1, 1,
-					"1", 4, 1, 2,
-				},
-				{
-					"1", 3, 0, 100,
-					"1", 3, 1, 100,
-					"1", 4, 0, 200,
+					"1", 2, 1, 2,
 				},
 			},
 			execSQL: "INSERT INTO Signal2/Values(id,keyValue,bucket,count) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE count = count + new.count",
@@ -705,12 +747,6 @@ func Test_QueryContext(t *testing.T) {
 
 				&Signal2{ID: "1", KeyValue: 2, Bucket: 0, Count: 0},
 				&Signal2{ID: "1", KeyValue: 2, Bucket: 1, Count: 52},
-
-				&Signal2{ID: "1", KeyValue: 3, Bucket: 0, Count: 100},
-				&Signal2{ID: "1", KeyValue: 3, Bucket: 1, Count: 101},
-
-				&Signal2{ID: "1", KeyValue: 4, Bucket: 0, Count: 200},
-				&Signal2{ID: "1", KeyValue: 4, Bucket: 1, Count: 2},
 			},
 			scanner: func(r *sql.Rows) (interface{}, error) {
 				agg := Signal2{}
@@ -720,7 +756,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "insert record with ignored field",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execParams:  []interface{}{1},
 			querySQL:    "SELECT * FROM Abc2 WHERE PK = ?",
 			init: []string{
@@ -744,7 +780,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "query with pk as a empty string ptr",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM authCode",
 				"INSERT INTO authCode(Code,ClientId,UserId) VALUES(?,?,?)",
@@ -765,7 +801,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "query with pk as a string ptr",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM authCode",
 				"INSERT INTO authCode(Code,ClientId,UserId) VALUES(?,?,?)",
@@ -788,7 +824,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "query with pk as a string",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM authCode",
 				"INSERT INTO authCode(Code,ClientId,UserId) VALUES(?,?,?)",
@@ -810,7 +846,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "insert bool value",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM Foo2",
 				"INSERT INTO Foo2(Id,Name,Actual) VALUES(?,?,?)",
@@ -832,7 +868,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "update bool value",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM Foo2",
 				"INSERT INTO Foo2(Id,Name,Actual) VALUES(?,?,?)",
@@ -856,7 +892,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "wrapepd count with group by",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message", 1, "eee", 2, "test message"},
 
@@ -877,7 +913,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "count with group by",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message", 1, "eee", 2, "test message"},
 
@@ -900,7 +936,7 @@ func Test_QueryContext(t *testing.T) {
 		/// // "1" | MAP('{1:{"count":[0, 0]}, 2:{"count":[0, 0]}}')
 		{
 			description: "array batch merge",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal2/Values WHERE pk = ?",
 			queryParams: []interface{}{"1"},
 			init: []string{
@@ -937,7 +973,7 @@ func Test_QueryContext(t *testing.T) {
 		///
 		{
 			description: "array batch merge",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal2/Values WHERE pk = ?",
 			queryParams: []interface{}{"1"},
 			init: []string{
@@ -972,7 +1008,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "array update by insert",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal2/Values WHERE pk = ?",
 			queryParams: []interface{}{"1"},
 			init: []string{
@@ -1008,7 +1044,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "map array with key filter and index range",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			//querySQL:    "SELECT id,value,bucket,count FROM Signal WHERE pk = ?",
 			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal/Values WHERE id = ? AND keyValue = ?  AND bucket between ? and ?",
 			queryParams: []interface{}{"1", "v1", 2, 3},
@@ -1030,7 +1066,7 @@ func Test_QueryContext(t *testing.T) {
 
 		{
 			description: "map array with key filter  ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			//querySQL:    "SELECT id,value,bucket,count FROM Signal WHERE pk = ?",
 			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal/Values WHERE id = ? AND keyValue IN(?)",
 			queryParams: []interface{}{"1", "v2"},
@@ -1054,7 +1090,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "array ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			//querySQL:    "SELECT id,value,bucket,count FROM Signal WHERE pk = ?",
 			querySQL:    "SELECT id,keyValue,bucket,count FROM Signal/Values WHERE pk = ?",
 			queryParams: []interface{}{"1"},
@@ -1092,7 +1128,7 @@ func Test_QueryContext(t *testing.T) {
 		*/
 		{
 			description: "secondary secondaryIndex ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM users WHERE email = ?",
 			queryParams: []interface{}{"xxx@test.io"},
 			init: []string{
@@ -1114,7 +1150,7 @@ func Test_QueryContext(t *testing.T) {
 
 		{
 			description: "get 1 record with all bins by PK with string list",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM Qux WHERE PK IN(?,?)",
 			init: []string{
 				"DELETE FROM Qux",
@@ -1137,7 +1173,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "nested sql ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id FROM (SELECT * FROM SimpleAgg WHERE 1 = 0)",
 			init: []string{
 				"DELETE FROM SimpleAgg",
@@ -1151,7 +1187,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "false predicate ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM SimpleAgg WHERE 1 = 0",
 			init: []string{
 				"DELETE FROM SimpleAgg",
@@ -1165,7 +1201,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "false predicate ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM SimpleAgg WHERE 1 = 0",
 			init: []string{
 				"DELETE FROM SimpleAgg",
@@ -1178,8 +1214,8 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "insert record - with pointer params",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			description: "insert record - with pointer dsnParams",
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO Foo(Id,Name) VALUES(?,?)",
 			execParams:  []interface{}{intPtr(1), stringPtr("foo inserted")},
 			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
@@ -1198,7 +1234,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "count",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message", 1, "eee"},
 
@@ -1219,7 +1255,7 @@ func Test_QueryContext(t *testing.T) {
 
 		{
 			description: "list insert with secondaryIndex criteria",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message", 1, "last message"},
 
@@ -1240,7 +1276,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "batch insert",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO SimpleAgg(id,amount) VALUES(?,?),(?,?)",
 			execParams:  []interface{}{1, 10, 2, 20},
 			querySQL:    "SELECT id,amount FROM SimpleAgg WHERE PK IN(?, ?)",
@@ -1260,7 +1296,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "list insert",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO Msg/Items(id,body) VALUES(?,?),(?,?)",
 			execParams:  []interface{}{1, "test message", 1, "another message"},
 
@@ -1280,32 +1316,10 @@ func Test_QueryContext(t *testing.T) {
 			},
 		},
 		{
-			description: "batch merge with map",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO Agg/Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
-			execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
-			querySQL:    "SELECT id,seq,amount,val FROM Agg/Values WHERE PK = ? AND KEY IN(?, ?)",
-			queryParams: []interface{}{1, 1, 2},
-			init: []string{
-				"DELETE FROM Agg/Values",
-				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(1,1,1,1)",
-				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(1,2,1,1)",
-				"INSERT INTO Agg/Values(id,seq,amount,val) VALUES(2,1,1,1)",
-			},
-			expect: []interface{}{
-				&Agg{Id: 1, Seq: 1, Amount: 12, Val: 112},
-				&Agg{Id: 1, Seq: 2, Amount: 13, Val: 122},
-			},
-			scanner: func(r *sql.Rows) (interface{}, error) {
-				agg := Agg{}
-				err := r.Scan(&agg.Id, &agg.Seq, &agg.Amount, &agg.Val)
-				return &agg, err
-			},
-		},
-		{
 			description: "batch merge",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
-			execSQL:     "INSERT INTO SimpleAgg(id,amount) VALUES(?,?),(?,?),(?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount",
+			//dsn:         "", // dynamic
+			dsn:     "", // dynamic
+			execSQL: "INSERT INTO SimpleAgg(id,amount) VALUES(?,?),(?,?),(?,?) AS new ON DUPLICATE KEY UPDATE amount = amount + new.amount",
 			execParams: []interface{}{
 				1, 11,
 				2, 12,
@@ -1332,7 +1346,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "batch merge with map",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO Agg/Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?) AS new ON DUPLICATE KEY UPDATE val = val + new.val, amount = amount + new.amount",
 			execParams: []interface{}{
 				1, 1, 11, 111,
@@ -1358,7 +1372,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "batch map insert",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "INSERT INTO Agg/Values(id,seq,amount,val) VALUES(?,?,?,?),(?,?,?,?),(?,?,?,?)",
 			execParams:  []interface{}{1, 1, 11, 111, 1, 2, 12, 121, 2, 1, 11, 111},
 			querySQL:    "SELECT id,seq,amount,val FROM Agg/Values WHERE PK = ? AND KEY IN(?, ?)",
@@ -1380,7 +1394,7 @@ func Test_QueryContext(t *testing.T) {
 		// TODO
 		{
 			description: "update map bin with inc ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "UPDATE Agg/Values SET amount = amount + ?, val = val + 3  WHERE PK = ? AND KEY = ?",
 			execParams:  []interface{}{10, 1, 1},
 			querySQL:    "SELECT id, seq, amount, val FROM Agg/Values WHERE PK = ? AND KEY = ?",
@@ -1400,7 +1414,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "update bin with inc ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "UPDATE SimpleAgg SET amount = amount + ?  WHERE PK = ?",
 			execParams:  []interface{}{10, 1},
 			querySQL:    "SELECT id, amount FROM SimpleAgg WHERE PK = ?",
@@ -1420,7 +1434,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "update bin with dec ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "UPDATE SimpleAgg SET amount = amount - ?  WHERE PK = ?",
 			execParams:  []interface{}{2, 1},
 			querySQL:    "SELECT id, amount FROM SimpleAgg WHERE PK = ?",
@@ -1440,7 +1454,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "update with inc ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "UPDATE SimpleAgg SET amount = amount + ?  WHERE PK = ?",
 			execParams:  []interface{}{10, 1},
 			querySQL:    "SELECT id, amount FROM SimpleAgg WHERE PK = ?",
@@ -1460,7 +1474,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "update with dec ",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "UPDATE SimpleAgg SET amount = amount - ?  WHERE PK = ?",
 			execParams:  []interface{}{2, 1},
 			querySQL:    "SELECT id, amount FROM SimpleAgg WHERE PK = ?",
@@ -1480,7 +1494,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "update record - literal",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "UPDATE Foo SET Name = 'foo updated' WHERE PK = ?",
 			execParams:  []interface{}{1},
 			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
@@ -1500,7 +1514,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "update record placeholder",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "UPDATE Foo SET Name = ? WHERE PK = ?",
 			execParams:  []interface{}{"foo updated", 1},
 			querySQL:    "SELECT * FROM Foo WHERE PK = ?",
@@ -1520,7 +1534,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 1 bin map value by key",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1539,7 +1553,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with all bin map values",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1559,7 +1573,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record with all bins by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			//			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
 			querySQL: "SELECT * FROM Foo WHERE PK = ?",
 			init: []string{
@@ -1578,7 +1592,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 0 records by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM Foo",
 				"INSERT INTO Foo(Id,Name) VALUES(1,'foo1')",
@@ -1594,7 +1608,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record with all listed bins by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execSQL:     "REGISTER SET Foo AS struct{Id int; Name string}",
 			querySQL:    "SELECT Id, Name FROM Foo WHERE PK = ?",
 			init: []string{
@@ -1613,7 +1627,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "batch get - all records found by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM Foo WHERE PK IN(?, ?)",
 			queryParams: []interface{}{1, 3},
 			init: []string{
@@ -1634,7 +1648,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "batch get - few records found by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM Foo WHERE PK IN(?, ?, ?)",
 			queryParams: []interface{}{0, 1, 3},
 			init: []string{
@@ -1655,7 +1669,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "batch get - 0 records found by PK",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM Foo WHERE PK IN(?, ?, ?)",
 			queryParams: []interface{}{0, 10, 30},
 			init: []string{
@@ -1671,7 +1685,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "scan all - more than 0 records found",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM Foo",
 			queryParams: []interface{}{},
 			skip:        true, //this test fails intermittently, most likely truncate is not working as expected
@@ -1694,7 +1708,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "scan all - no records found",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT * FROM Foo",
 			queryParams: []interface{}{},
 			init: []string{
@@ -1709,7 +1723,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 2 bin map values by mapKey and between operator",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1732,7 +1746,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 1 bin map values by mapKey and between operator",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1752,7 +1766,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 0 bin map values by mapKey and between operator",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1770,7 +1784,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 0 records by PK with 0 bin map values by mapKey and between operator",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY BETWEEN ? AND ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1788,7 +1802,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 1 bin map values by mapKey",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1808,7 +1822,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 0 bin map values by mapKey",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1826,7 +1840,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 0 record by PK with 0 bin map values by mapKey",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY = ?",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1844,7 +1858,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 2 bin map values by mapKey list",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1866,7 +1880,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 1 bin map values by mapKey list",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1886,7 +1900,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 0 bin map values by mapKey list",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1904,7 +1918,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 0 record by PK with 0 bin map values by mapKey list",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			querySQL:    "SELECT id, seq, name FROM Doc/Bars WHERE PK = ? AND KEY IN (?,?)",
 			init: []string{
 				"DELETE FROM Doc",
@@ -1923,7 +1937,7 @@ func Test_QueryContext(t *testing.T) {
 
 		{
 			description: "get 1 record by PK with 1 bin map value by mapKey with string list",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM Qux",
 				"INSERT INTO Qux/Bars(id,seq,name,list) VALUES(?,?,?,?)",
@@ -1947,7 +1961,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record with all bins by PK - with time value stored as string",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM Baz",
 				"INSERT INTO Baz(id,seq,name,time) VALUES(1,1,'Time formatted stored as string','2021-01-06T05:00:00Z')",
@@ -1971,7 +1985,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record by PK with 2 bin map values by mapKey - with time value stored as string",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM Baz",
 				"INSERT INTO Baz/Bars(id,seq,name,time) VALUES(?,?,?,?)",
@@ -1998,7 +2012,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record with all bins by PK - with time value stored as int",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM BazUnix",
 				"INSERT INTO BazUnix(id,seq,name,time) VALUES(?,?,?,?)",
@@ -2022,7 +2036,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 records by PK with 2 bin map values by mapKey - with time value stored as int",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM BazUnix",
 				"INSERT INTO BazUnix/Bars(id,seq,name,time) VALUES(1,1,'Time stored as int 3','2021-01-06T05:00:00Z')",
@@ -2049,7 +2063,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 2 records with all bins by PK - with time value stored as string, time ptr in type",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM BazPtr",
 				"INSERT INTO BazPtr(id,seq,name,time) VALUES(1,1,'Time formatted stored as string','2021-01-06T05:00:00Z')",
@@ -2074,7 +2088,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "insert record with ttl",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			execParams:  []interface{}{1},
 			querySQL:    "SELECT * FROM Abc WHERE PK = ?",
 			init: []string{
@@ -2092,7 +2106,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record with all bins by PK - with time value stored as string, time double ptr in type",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM BazDoublePtr",
 				"INSERT INTO BazDoublePtr(id,seq,name,time) VALUES(1,1,'Time formatted stored as string','2021-01-06T05:00:00Z')",
@@ -2117,7 +2131,7 @@ func Test_QueryContext(t *testing.T) {
 
 		{
 			description: "get 1 record with all bins by PK - with time value stored as int, time ptr in type",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM BazUnixPtr",
 				"INSERT INTO BazUnixPtr(id,seq,name,time) VALUES(?,?,?,?)",
@@ -2141,7 +2155,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 1 record with all bins by PK - with time value stored as int, time double ptr in type",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM BazUnixDoublePtr",
 				"INSERT INTO BazUnixDoublePtr(id,seq,name,time) VALUES(?,?,?,?)",
@@ -2165,7 +2179,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 2 records with all bins by PK - struct with no ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM bar",
 				"INSERT INTO bar(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
@@ -2190,7 +2204,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 2 records with all bins by PK - struct with ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM barPtr",
 				"INSERT INTO barPtr(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
@@ -2215,7 +2229,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 2 records with all bins by PK - struct with double ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM barDoublePtr",
 				"INSERT INTO barDoublePtr(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
@@ -2240,7 +2254,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 2 records with all bins by PK with map - struct with ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM barPtr",
 				"INSERT INTO barPtr/Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
@@ -2263,7 +2277,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 2 records with all bins by PK with map - struct with double ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM barDoublePtr",
 				"INSERT INTO barDoublePtr/KeyValue(id,seq,amount,price,name,time) VALUES(1,1,11,1.25,'Time formatted stored as string','2021-01-06T05:00:00Z')",
@@ -2288,7 +2302,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 2 records with all bins by PK aggregation with map - struct with ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM barPtr",
 				"INSERT INTO barPtr/Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
@@ -2320,7 +2334,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "get 2 records with all bins by PK aggregation with map - struct with double ptrs",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM barDoublePtr",
 				"INSERT INTO barDoublePtr/Values(id,seq,amount,price,name,time) VALUES(?,?,?,?,?,?),(?,?,?,?,?,?)",
@@ -2352,7 +2366,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "aggregate with duplicated pk and mapKey in one batch",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"TRUNCATE TABLE bar",
 			},
@@ -2388,7 +2402,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "avoid to insert float value as int",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM bar",
 			},
@@ -2400,7 +2414,7 @@ func Test_QueryContext(t *testing.T) {
 		},
 		{
 			description: "aggregate with with int to float param conversion",
-			dsn:         "aerospike://127.0.0.1:3000/" + namespace,
+			dsn:         "", // dynamic
 			init: []string{
 				"DELETE FROM bar",
 			},
@@ -2431,13 +2445,19 @@ func Test_QueryContext(t *testing.T) {
 		}
 	}
 
-	testCases.runTest(t)
+	for _, set := range dsnParamsSet {
+		for _, tc := range testCases {
+			tc.dsn = dsnGlobal + set
+		}
+		testCases.runTest(t)
+	}
+
 }
 
 func (s tstCases) runTest(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range s {
-		fmt.Printf("running test: %v\n", tc.description)
+		fmt.Printf("running test: %v with conn: %s\n", tc.description, tc.dsn)
 		t.Run(tc.description, func(t *testing.T) {
 			if tc.truncateNamespaces {
 				err := truncateNamespace(tc.dsn)
@@ -2529,6 +2549,7 @@ func initDb(ctx context.Context, db *sql.DB, init []string, initParams [][]inter
 		if err != nil {
 			return err
 		}
+		time.Sleep(50 * time.Millisecond) // to prevent aerospike errors ie. 2 fast the same inserts and delete between them
 	}
 	return nil
 }

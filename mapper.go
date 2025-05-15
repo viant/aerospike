@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -43,6 +44,7 @@ type (
 		aggregateColumn  map[string]*expr.Call
 		columnZeroValues map[string]interface{}
 		groupBy          []int
+		zeroMux          sync.RWMutex
 	}
 )
 
@@ -499,7 +501,11 @@ func baseType(rType reflect.Type) reflect.Type {
 }
 
 func (m *mapper) columnZeroValue(name string) interface{} {
-	if value, ok := m.columnZeroValues[name]; ok == true {
+	m.zeroMux.RLock()
+	value, ok := m.columnZeroValues[name]
+	m.zeroMux.RUnlock()
+
+	if ok {
 		return value
 	}
 
@@ -518,7 +524,10 @@ func (m *mapper) columnZeroValue(name string) interface{} {
 		zeroValue = 0
 	}
 
+	m.zeroMux.Lock()
 	m.columnZeroValues[name] = zeroValue
+	m.zeroMux.Unlock()
+
 	return zeroValue
 }
 
