@@ -133,14 +133,14 @@ func (s *Statement) setSet(source string) {
 	source = strings.ReplaceAll(source, "`", "")
 	s.set = source
 	s.source = source
-	if index := strings.Index(source, "."); index != -1 {
-		s.namespace = source[:index]
-		s.set = source[index+1:]
+	if idx := strings.Index(source, "."); idx != -1 {
+		s.namespace = source[:idx]
+		s.set = source[idx+1:]
 		source = s.set
 	}
-	if index := strings.Index(source, "/"); index != -1 {
-		s.collectionBin = source[index+1:]
-		s.set = source[:index]
+	if idx := strings.Index(source, "/"); idx != -1 {
+		s.collectionBin = source[idx+1:]
+		s.set = source[:idx]
 	}
 }
 
