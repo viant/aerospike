@@ -3,6 +3,7 @@ package aerospike
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"github.com/hashicorp/golang-lru"
 	"github.com/stretchr/testify/assert"
 	ainsert "github.com/viant/aerospike/insert"
@@ -10,36 +11,71 @@ import (
 	"testing"
 )
 
-func BenchmarkStatement_ExecContext_BatchInsert(b *testing.B) {
+func Benchmark_BatchInsert(b *testing.B) {
 	data := perfTestData()
-	namespace := "udb"
+	namespace := "ns_memory"
+	// build the placeholder list "(?,…)," once
 	values := strings.Repeat("(?, ?, ?, ?, ?),", len(data))
-	SQL := "INSERT INTO PerfTest$Values (id, seq, active, quantity, value) VALUES" + values[:len(values)-1]
+	SQL := "INSERT INTO PerfTest/Values (id, seq, active, quantity, value) VALUES" +
+		values[:len(values)-1]
 
-	args := make([]interface{}, 0, len(data)*5)
-	for _, item := range data {
-		args = append(args, item.Bind()...)
+	useCases := []struct {
+		name         string
+		disableCache bool
+		insertCount  int
+	}{
+		// 1 insert contains 500000 placeholders
+		{"1x100k_CacheEnabled", false, 1},
+		{"1x100k_CacheDisabled", true, 1},
+		{"10x100k_CacheEnabled", false, 10},
+		{"10x100k_CacheDisabled", true, 10},
+		{"20x100k_CacheEnabled", false, 20},
+		{"20x100k_CacheDisabled", true, 20},
+		{"50x100k_CacheEnabled", false, 50},
+		{"50x100k_CacheDisabled", true, 50},
 	}
-	b.ResetTimer()
 
-	db, err := sql.Open("aerospike", "aerospike://127.0.0.1:3000/"+namespace)
-	if !assert.Nil(b, err) {
-		return
-	}
+	for _, tc := range useCases {
+		tc := tc // capture
+		b.Run(tc.name, func(b *testing.B) {
+			// prepare args once
+			args := make([]interface{}, 0, len(data)*5)
+			for _, item := range data {
+				args = append(args, item.Bind()...)
+			}
 
-	_, err = db.ExecContext(context.Background(), "REGISTER SET PerfTest AS ?", PerfTest{})
-	if !assert.Nil(b, err) {
-		return
-	}
-	if !assert.NotNil(b, db) {
-		return
-	}
-	_, err = db.ExecContext(context.Background(), "DELETE FROM PerfTest")
-	for i := 0; i < b.N; i++ {
-		_, err = db.ExecContext(context.Background(), SQL, args...)
-		if !assert.Nil(b, err) {
-			return
-		}
+			// open with or without cache
+			dsn := fmt.Sprintf(
+				"aerospike://127.0.0.1:3000/%s?disablePool=false&disableCache=%t",
+				namespace, tc.disableCache,
+			)
+			db, err := sql.Open("aerospike", dsn)
+			if err != nil {
+				b.Fatalf("open: %v", err)
+			}
+			defer db.Close()
+
+			// register set & clear before running the benchmark
+			if _, err := db.ExecContext(context.Background(),
+				"REGISTER SET PerfTest AS ?", PerfTest{}); err != nil {
+				b.Fatalf("register: %v", err)
+			}
+			if _, err := db.ExecContext(context.Background(),
+				"DELETE FROM PerfTest"); err != nil {
+				b.Fatalf("delete: %v", err)
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				for j := 0; j < tc.insertCount; j++ {
+					if _, err := db.ExecContext(
+						context.Background(), SQL, args...,
+					); err != nil {
+						b.Fatalf("exec: %v", err)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -66,7 +102,7 @@ func BenchmarkStatement_ExecContext_BatchMerge(b *testing.B) {
 	data := perfTestData()
 	namespace := "udb"
 	values := strings.Repeat("(?, ?, ?, ?, ?),", len(data))
-	SQL := "INSERT INTO PerfTest$Values (id, seq, active, quantity, value) VALUES" + values[:len(values)-1] + " AS new ON DUPLICATE KEY UPDATE active = active + new.active, quantity = quantity + new.quantity, value = value + new.value"
+	SQL := "INSERT INTO PerfTest/Values (id, seq, active, quantity, value) VALUES" + values[:len(values)-1] + " AS new ON DUPLICATE KEY UPDATE active = active + new.active, quantity = quantity + new.quantity, value = value + new.value"
 
 	args := make([]interface{}, 0, len(data)*5)
 	for _, item := range data {
@@ -109,6 +145,7 @@ func (p *PerfTest) Bind() []interface{} {
 
 func perfTestData() []*PerfTest {
 	var items = make([]*PerfTest, 100000)
+	//var items = make([]*PerfTest, 100000)
 	for i := range items {
 		items[i] = &PerfTest{
 			ID:       i % 1000,
