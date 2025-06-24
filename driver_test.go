@@ -493,6 +493,190 @@ func Test_ExecContext(t *testing.T) {
 
 }
 
+func Test_ContextWithTimeout(t *testing.T) {
+	type Foo struct {
+		Id   int
+		Name string
+	}
+
+	// Test ExecContext with timeout
+	t.Run("ExecContext with sufficient timeout", func(t *testing.T) {
+		// Create a context with a timeout that should be sufficient for the operation
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		db, err := sql.Open("aerospike", dsnGlobal+dsnParamsSet[0])
+		if !assert.Nil(t, err) {
+			return
+		}
+		defer db.Close()
+
+		// Execute a simple register set operation
+		_, err = db.ExecContext(ctx, "REGISTER SET Foo AS ?", Foo{})
+		assert.Nil(t, err, "ExecContext with sufficient timeout should succeed")
+	})
+
+	t.Run("QueryContext with sufficient timeout", func(t *testing.T) {
+		// Create a context with a timeout that should be sufficient for the operation
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		db, err := sql.Open("aerospike", dsnGlobal+dsnParamsSet[0])
+		if !assert.Nil(t, err) {
+			return
+		}
+		defer db.Close()
+
+		// First register the set
+		_, err = db.ExecContext(ctx, "REGISTER SET Foo AS ?", Foo{})
+		if !assert.Nil(t, err) {
+			return
+		}
+
+		// Then query it
+		rows, err := db.QueryContext(ctx, "SELECT * FROM Foo")
+		assert.Nil(t, err, "QueryContext with sufficient timeout should succeed")
+		if err == nil {
+			rows.Close()
+		}
+	})
+
+	t.Run("QueryContext with unsufficient timeout", func(t *testing.T) {
+		// Create a context with a timeout that should be sufficient for the operation
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+		defer cancel()
+
+		db, err := sql.Open("aerospike", dsnGlobal+dsnParamsSet[0])
+		if !assert.Nil(t, err) {
+			return
+		}
+		defer db.Close()
+
+		// First register the set
+		_, err = db.ExecContext(ctx, "REGISTER SET Foo AS ?", Foo{})
+		if !assert.Nil(t, err) {
+			return
+		}
+
+		time.Sleep(1 * time.Second) // Ensure the context timeout is almost reached
+
+		// Then query it
+		rows, err := db.QueryContext(ctx, "SELECT * FROM Foo")
+		if err == nil {
+			rows.Close()
+		}
+
+		assert.NotNil(t, err, "QueryContext with unsufficient timeout shouldn't succeed")
+	})
+
+	// Test context cancellation
+	t.Run("Context cancellation", func(t *testing.T) {
+		// Create a context that we'll cancel manually
+		ctx, cancel := context.WithCancel(context.Background())
+
+		db, err := sql.Open("aerospike", dsnGlobal+dsnParamsSet[0])
+		if !assert.Nil(t, err) {
+			return
+		}
+		defer db.Close()
+
+		// First register the set
+		_, err = db.ExecContext(ctx, "REGISTER SET Foo AS ?", Foo{})
+		if !assert.Nil(t, err) {
+			return
+		}
+
+		// Cancel the context before the query
+		cancel()
+
+		// Attempt to query with a cancelled context
+		// This should either return an error or the driver might handle it gracefully
+		rows, err := db.QueryContext(ctx, "SELECT * FROM Foo")
+		if err == nil {
+			rows.Close()
+		}
+
+		assert.NotNil(t, err, "QueryContext with cancelled context should return an error")
+	})
+
+	// Test context with deadline
+	t.Run("Context with deadline", func(t *testing.T) {
+		// Create a context with a future deadline
+		deadline := time.Now().Add(10 * time.Second)
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		defer cancel()
+
+		db, err := sql.Open("aerospike", dsnGlobal+dsnParamsSet[0])
+		if !assert.Nil(t, err) {
+			return
+		}
+		defer db.Close()
+
+		// Execute a simple register set operation
+		_, err = db.ExecContext(ctx, "REGISTER SET Foo AS ?", Foo{})
+		assert.Nil(t, err, "ExecContext with future deadline should succeed")
+
+		// Get the remaining time until the deadline
+		remaining := time.Until(deadline)
+		t.Logf("Remaining time until deadline: %v", remaining)
+
+		// Then query it
+		rows, err := db.QueryContext(ctx, "SELECT * FROM Foo")
+		assert.Nil(t, err, "QueryContext with future deadline should succeed")
+		if err == nil {
+			rows.Close()
+		}
+	})
+
+	// Test context with values
+	t.Run("Context with values", func(t *testing.T) {
+		// Create a context with a value
+		type contextKey string
+		const requestIDKey contextKey = "request_id"
+		requestID := "test-request-123"
+
+		// Create a context with a value and a timeout
+		ctx := context.WithValue(context.Background(), requestIDKey, requestID)
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		// Verify the value is in the context
+		if id, ok := ctx.Value(requestIDKey).(string); ok {
+			assert.Equal(t, requestID, id, "Context should contain the request ID")
+		} else {
+			t.Fatal("Failed to retrieve request ID from context")
+		}
+
+		db, err := sql.Open("aerospike", dsnGlobal+dsnParamsSet[0])
+		if !assert.Nil(t, err) {
+			return
+		}
+		defer db.Close()
+
+		// Execute a simple register set operation
+		// While the Aerospike driver doesn't use the request ID directly,
+		// this demonstrates that context values are preserved through the call chain
+		_, err = db.ExecContext(ctx, "REGISTER SET Foo AS ?", Foo{})
+		assert.Nil(t, err, "ExecContext with context value should succeed")
+
+		// Then query it
+		rows, err := db.QueryContext(ctx, "SELECT * FROM Foo")
+		assert.Nil(t, err, "QueryContext with context value should succeed")
+		if err == nil {
+			rows.Close()
+		}
+	})
+
+	// Note: Testing with an extremely short timeout that would cause a timeout error
+	// is challenging in a unit test because:
+	// 1. It might make the test flaky (sometimes passing, sometimes failing)
+	// 2. The actual timeout behavior depends on the Aerospike client implementation
+	// 3. In a real environment, timeouts would be caused by network issues or server load
+	//
+	// For a more comprehensive test of timeout behavior, consider integration tests
+	// with controlled network conditions or server load.
+}
+
 func Test_QueryContext(t *testing.T) {
 
 	type (
@@ -2455,7 +2639,7 @@ func Test_QueryContext(t *testing.T) {
 }
 
 func (s tstCases) runTest(t *testing.T) {
-	ctx := context.Background()
+
 	for _, tc := range s {
 		fmt.Printf("running test: %v with conn: %s\n", tc.description, tc.dsn)
 		t.Run(tc.description, func(t *testing.T) {
@@ -2483,6 +2667,11 @@ func (s tstCases) runTest(t *testing.T) {
 					return
 				}
 			}
+
+			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
 			err = initDb(ctx, db, tc.init, tc.initParams)
 			if !assert.Nil(t, err, tc.description) {
 				fmt.Println("initDb ERROR: ", err.Error())

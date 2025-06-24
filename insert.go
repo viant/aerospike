@@ -1,6 +1,7 @@
 package aerospike
 
 import (
+	"context"
 	"database/sql/driver"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
@@ -102,7 +103,7 @@ func isPlaceholderList(s string) bool {
 	return true
 }
 
-func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
+func (s *Statement) handleMapLoad(ctx context.Context, args []driver.NamedValue) error {
 
 	batchCount := s.insert.ValuesCnt() / len(s.insert.Columns)
 	var groups = make(map[interface{}][]map[interface{}]map[interface{}]interface{})
@@ -142,7 +143,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 
 	isMerge := len(s.insert.OnDuplicateKeyUpdate) > 0
 	if isMerge {
-		return s.handleMapMerge(groups)
+		return s.handleMapMerge(ctx, groups)
 	}
 
 	aSet, err := s.lookupSet()
@@ -163,7 +164,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 			mapPolicy := as.DefaultMapPolicy()
 			var values = make(map[interface{}]interface{}, len(group))
 			if s.mapper.component != nil {
-				if err := s.ensureMapOfSlice(group, key); err != nil {
+				if err := s.ensureMapOfSlice(ctx, group, key); err != nil {
 					return err
 				}
 				for k, v := range group {
@@ -180,7 +181,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 					ops = append(ops, as.ListSetOp(s.collectionBin, idx, as.NewValue(componentValue), key))
 				}
 
-				if _, err = s.client.Operate(nil, key, ops...); err != nil {
+				if _, err = s.operateWithCtx(ctx, writePolicy, key, ops); err != nil {
 					return err
 				}
 				continue
@@ -191,7 +192,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 				}
 				ops = append(ops, as.MapPutItemsOp(mapPolicy, s.collectionBin, values))
 			}
-			if _, err = s.client.Operate(writePolicy, key, ops...); err != nil {
+			if _, err = s.operateWithCtx(ctx, writePolicy, key, ops); err != nil {
 				return err
 			}
 		}
@@ -199,7 +200,7 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 	return nil
 }
 
-func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]interface{}, key *as.Key) error {
+func (s *Statement) ensureMapOfSlice(ctx context.Context, group map[interface{}]map[interface{}]interface{}, key *as.Key) error {
 	aSet, err := s.lookupSet()
 	if err != nil {
 		return err
@@ -214,18 +215,18 @@ func (s *Statement) ensureMapOfSlice(group map[interface{}]map[interface{}]inter
 	writePolicy := s.writePolicy(aSet, true)
 
 	writePolicy.SendKey = true
-	if _, err := s.client.Operate(writePolicy, key, ops...); err != nil {
+	if _, err = s.operateWithCtx(ctx, writePolicy, key, ops); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *Statement) handleMapMerge(groups map[interface{}][]map[interface{}]map[interface{}]interface{}) error {
+func (s *Statement) handleMapMerge(ctx context.Context, groups map[interface{}][]map[interface{}]map[interface{}]interface{}) error {
 	addColumn, subColumn, err := s.identifyAddSubColumn()
 	if s.cfg.concurrency <= 1 {
 		for recKey := range groups {
 			groupSet := groups[recKey]
-			if e := s.mergeMaps(recKey, groupSet, addColumn, subColumn); e != nil {
+			if e := s.mergeMaps(ctx, recKey, groupSet, addColumn, subColumn); e != nil {
 				err = e
 			}
 		}
@@ -246,7 +247,7 @@ func (s *Statement) handleMapMerge(groups map[interface{}][]map[interface{}]map[
 				wg.Done()
 				<-rateLimiter
 			}()
-			if e := s.mergeMaps(recKey, groupSet, addColumn, subColumn); e != nil {
+			if e := s.mergeMaps(ctx, recKey, groupSet, addColumn, subColumn); e != nil {
 				err = e
 			}
 		}(key, groupSet)
@@ -255,7 +256,7 @@ func (s *Statement) handleMapMerge(groups map[interface{}][]map[interface{}]map[
 	return err
 }
 
-func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map[interface{}]interface{}, addColumn map[string]bool, subColumn map[string]bool) error {
+func (s *Statement) mergeMaps(ctx context.Context, recKey interface{}, groupSet []map[interface{}]map[interface{}]interface{}, addColumn map[string]bool, subColumn map[string]bool) error {
 	var err error
 	key, err := as.NewKey(s.namespace, s.set, recKey)
 	if err != nil {
@@ -331,10 +332,10 @@ func (s *Statement) mergeMaps(recKey interface{}, groupSet []map[interface{}]map
 		}
 		writePolicy := s.writePolicy(aSet, true)
 
-		if _, err = s.client.Operate(writePolicy, key, createOp...); err != nil {
+		if _, err = s.operateWithCtx(ctx, writePolicy, key, createOp); err != nil {
 			return err
 		}
-		if _, err = s.client.Operate(writePolicy, key, ops...); err != nil {
+		if _, err = s.operateWithCtx(ctx, writePolicy, key, ops); err != nil {
 			return err
 		}
 	}
@@ -376,7 +377,7 @@ func (s *Statement) identifyAddSubColumn() (map[string]bool, map[string]bool, er
 	return addColumn, subColumn, nil
 }
 
-func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) error {
+func (s *Statement) handleListInsert(ctx context.Context, args []driver.NamedValue, itemCount int) error {
 	var argIndex int
 	var operations = map[interface{}][]*as.Operation{}
 
@@ -401,7 +402,7 @@ func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) er
 		operations = append(operations, as.PutOp(as.NewBin(s.mapper.pk[0].Column(), keyValue)))
 		writePolicy := s.writePolicy(aSet, true)
 
-		ret, err := s.client.Operate(writePolicy, key, operations...)
+		ret, err := s.operateWithCtx(ctx, writePolicy, key, operations)
 		if err != nil {
 			return err
 		}
@@ -421,7 +422,7 @@ func (s *Statement) handleListInsert(args []driver.NamedValue, itemCount int) er
 	return nil
 }
 
-func (s *Statement) handleInsert(args []driver.NamedValue) error {
+func (s *Statement) handleInsert(ctx context.Context, args []driver.NamedValue) error {
 	if s.insert == nil {
 		return fmt.Errorf("insert statement is not initialized")
 	}
@@ -443,17 +444,16 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 	if isDryRun("insert") {
 		return nil
 	}
-	//if batchCount > 1 { //TODO check impact on regular insert
+
 	if s.collectionType.IsMap() {
 		if len(s.mapper.mapKey) == 0 {
 			return fmt.Errorf("unable to find map mapKey field")
 		}
-		return s.handleMapLoad(args)
+		return s.handleMapLoad(ctx, args)
 	}
-	//}
 
 	if s.collectionType.IsArray() {
-		return s.handleListInsert(args, batchCount)
+		return s.handleListInsert(ctx, args, batchCount)
 	}
 
 	aSet, err := s.lookupSet()
@@ -474,33 +474,33 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 		writePolicy := s.writePolicy(aSet, true)
 
 		if s.collectionBin != "" {
-			return s.handleMapInsert(bins, err, writePolicy, key)
+			return s.handleMapInsert(ctx, bins, err, writePolicy, key)
 		}
 		if isMerge {
-			if err := s.handleMerge(bins, writePolicy, key); err != nil {
+			if err := s.handleMerge(ctx, bins, writePolicy, key); err != nil {
 				return err
 			}
 			continue
 		}
 
 		writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
-		if err = s.client.Put(writePolicy, key, bins); err != nil {
+		if err = s.putWithCtx(ctx, writePolicy, key, bins); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Statement) handleMapInsert(bins map[string]interface{}, err error, writePolicy *as.WritePolicy, key *as.Key) error {
+func (s *Statement) handleMapInsert(ctx context.Context, bins map[string]interface{}, err error, writePolicy *as.WritePolicy, key *as.Key) error {
 	mapKey := s.getKey(s.mapper.mapKey, bins)
 	ops := []*as.Operation{
 		as.MapPutOp(as.DefaultMapPolicy(), s.collectionBin, mapKey, bins),
 	}
-	_, err = s.client.Operate(writePolicy, key, ops...)
+	_, err = s.operateWithCtx(ctx, writePolicy, key, ops)
 	return err
 }
 
-func (s *Statement) handleMerge(bins map[string]interface{}, writePolicy *as.WritePolicy, key *as.Key) error {
+func (s *Statement) handleMerge(ctx context.Context, bins map[string]interface{}, writePolicy *as.WritePolicy, key *as.Key) error {
 	addColumn, subColumn, err := s.identifyAddSubColumn()
 	if err != nil {
 		return err
@@ -515,7 +515,7 @@ func (s *Statement) handleMerge(bins map[string]interface{}, writePolicy *as.Wri
 			ops = append(ops, as.PutOp(as.NewBin(column, value)))
 		}
 	}
-	_, err = s.client.Operate(writePolicy, key, ops...)
+	_, err = s.operateWithCtx(ctx, writePolicy, key, ops)
 	return err
 }
 
