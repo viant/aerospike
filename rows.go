@@ -105,12 +105,64 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 			if err := aField.setter(value, aField.Field, ptr); err != nil {
 				return err
 			}
-			dest[i] = aField.Value(ptr)
+			dest[i] = toDriverValue(aField.Value(ptr))
 			continue
 		}
-		dest[i] = aField.Value(ptr)
+		dest[i] = toDriverValue(aField.Value(ptr))
 	}
 	return nil
+}
+
+// toDriverValue ensures values placed into dest[] are basic driver types, not pointers
+func toDriverValue(v interface{}) interface{} {
+	if v == nil {
+		return nil
+	}
+	// Dereference common pointer types to underlying values for driver
+	switch actual := v.(type) {
+	case *int:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *int32:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *int64:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *float32:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *float64:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *bool:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *string:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *[]byte:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	}
+	// Fallback: return as-is
+	return v
 }
 
 // ColumnTypeScanType returns column scan type

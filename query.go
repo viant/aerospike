@@ -397,7 +397,7 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 			rows.rowsReader = newRowsReader([]*as.Record{})
 			return rows, nil
 		}
-		recs, verr := s.convertMapPairsToRecords(pairs)
+		recs, verr := s.convertMapPairsToRecords(keys, pairs)
 		if verr != nil {
 			return nil, verr
 		}
@@ -504,21 +504,53 @@ func (s *Statement) convertMapSlicePairsToRecords(keys []*as.Key, pairs []as.Map
 	return records, nil
 }
 
-func (s *Statement) convertMapPairsToRecords(pairs []as.MapPair) ([]*as.Record, error) {
+func (s *Statement) convertMapPairsToRecords(keys []*as.Key, pairs []as.MapPair) ([]*as.Record, error) {
 	var records []*as.Record
 
 	for _, pair := range pairs {
-		items, ok := pair.Value.(map[interface{}]interface{})
-		if !ok {
-			return nil, fmt.Errorf("unable to convert map pairs to records - unsupported type: %T, expected: %T", pair.Value, items)
-		}
-		record := &as.Record{Bins: map[string]interface{}{}}
-		for k, value := range items {
-			key := k.(string)
-			record.Bins[key] = value
+		// Object-shaped value
+		if items, ok := pair.Value.(map[interface{}]interface{}); ok {
+			record := &as.Record{Bins: map[string]interface{}{}}
+			for k, value := range items {
+				key := k.(string)
+				record.Bins[key] = value
+			}
+			// Inject pk and mapKey if missing
+			if s.mapper != nil {
+				if len(s.mapper.pk) > 0 {
+					if _, ok := record.Bins[s.mapper.pk[0].Column()]; !ok {
+						record.Bins[s.mapper.pk[0].Column()] = keys[0].Value()
+					}
+				}
+				if len(s.mapper.mapKey) > 0 {
+					if _, ok := record.Bins[s.mapper.mapKey[0].Column()]; !ok {
+						record.Bins[s.mapper.mapKey[0].Column()] = pair.Key
+					}
+				}
+			}
+			records = append(records, record)
+			continue
 		}
 
-		records = append(records, record)
+		// Scalar-shaped value: synthesize bins
+		if s.mapper != nil {
+			record := &as.Record{Bins: map[string]interface{}{}}
+			payload := findPayloadColumn(s.mapper)
+			if payload == "" {
+				payload = "value"
+			}
+			record.Bins[payload] = coerceScalarToFieldType(pair.Value, s.mapper.getField(payload))
+			if len(s.mapper.pk) > 0 {
+				record.Bins[s.mapper.pk[0].Column()] = keys[0].Value()
+			}
+			if len(s.mapper.mapKey) > 0 {
+				record.Bins[s.mapper.mapKey[0].Column()] = pair.Key
+			}
+			records = append(records, record)
+			continue
+		}
+
+		return nil, fmt.Errorf("unable to convert map pairs to records - unsupported type: %T", pair.Value)
 	}
 	return records, nil
 }
@@ -687,16 +719,53 @@ func (s *Statement) handleMapBinResult(record *as.Record, records *[]*as.Record)
 				}
 			}
 
-			entry, ok := v.(map[interface{}]interface{})
-			if !ok {
-				return fmt.Errorf("invalid map bin entry value: %v", v)
+			var rec = &as.Record{Bins: map[string]interface{}{}}
+			// Try object-shaped entry first
+			if entry, ok := v.(map[interface{}]interface{}); ok {
+				for k, value := range entry {
+					key, _ := k.(string)
+					rec.Bins[key] = value
+				}
+				// Ensure pk and mapKey bins exist
+				if s.mapper != nil && len(s.mapper.pk) > 0 {
+					pkCol := s.mapper.pk[0].Column()
+					if _, exists := rec.Bins[pkCol]; !exists {
+						rec.Bins[pkCol] = record.Key.Value()
+					}
+				}
+				if s.mapper != nil && len(s.mapper.mapKey) > 0 {
+					mkCol := s.mapper.mapKey[0].Column()
+					if _, exists := rec.Bins[mkCol]; !exists {
+						rec.Bins[mkCol] = mapKey
+					}
+				}
+				*records = append(*records, rec)
+				continue
 			}
-			var record = &as.Record{Bins: map[string]interface{}{}}
-			for k, value := range entry {
-				key, _ := k.(string)
-				record.Bins[key] = value
+
+			// Scalar-shaped entry: synthesize object with pk, mapKey and payload column
+			if s.mapper != nil {
+				// Determine payload column
+				payload := findPayloadColumn(s.mapper)
+				if payload == "" {
+					// Fallback: treat as generic 'value'
+					payload = "value"
+				}
+				// Coerce scalar to target type if needed
+				coerced := coerceScalarToFieldType(v, s.mapper.getField(payload))
+				rec.Bins[payload] = coerced
+				if len(s.mapper.pk) > 0 {
+					rec.Bins[s.mapper.pk[0].Column()] = record.Key.Value()
+				}
+				if len(s.mapper.mapKey) > 0 {
+					rec.Bins[s.mapper.mapKey[0].Column()] = mapKey
+				}
+				*records = append(*records, rec)
+				continue
 			}
-			*records = append(*records, record)
+
+			// If no mapper, return an error for unknown shape
+			return fmt.Errorf("invalid map bin entry value: %v", v)
 		}
 	}
 	return nil
@@ -735,4 +804,37 @@ func (s *Statement) handleBinMapArrayComponentResult(record *as.Record, records 
 
 	}
 	return nil
+}
+
+// findPayloadColumn returns the first non-meta column name (not pk/mapKey/arrayIndex/secondaryIndex/component)
+func findPayloadColumn(m *mapper) string {
+	for i := range m.fields {
+		f := &m.fields[i]
+		if f.tag == nil {
+			continue
+		}
+		if f.tag.IsPK || f.tag.IsMapKey || f.tag.IsArrayIndex || f.tag.IsSecondaryIndex || f.tag.IsComponent || f.tag.Ignore {
+			continue
+		}
+		return f.Column()
+	}
+	return ""
+}
+
+// coerceScalarToFieldType converts scalar into a type compatible with the destination field when possible.
+func coerceScalarToFieldType(value interface{}, fld *field) interface{} {
+	if fld == nil || fld.Field == nil {
+		return value
+	}
+	dst := baseType(fld.Type)
+	switch dst.Kind() {
+	case reflect.String:
+		switch actual := value.(type) {
+		case string:
+			return actual
+		default:
+			return fmt.Sprintf("%v", actual)
+		}
+	}
+	return value
 }

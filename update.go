@@ -98,14 +98,28 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 		}
 		mapPolicy := as.NewMapPolicy(as.MapOrder.KEY_ORDERED, as.MapWriteMode.UPDATE)
 		binKey := as.CtxMapKey(as.NewValue(s.mapKeyValues[0]))
-		for key, value := range addBins {
-			operates = append(operates, as.MapIncrementOp(mapPolicy, s.collectionBin, key, value, binKey))
-		}
-		for key, value := range subBins {
-			operates = append(operates, as.MapDecrementOp(mapPolicy, s.collectionBin, key, value, binKey))
-		}
-		for key, value := range putBins {
-			operates = append(operates, as.MapPutOp(mapPolicy, s.collectionBin, key, value, binKey))
+		// If the update only sets the payload column and no add/sub, replace entire entry value
+		payload := findPayloadColumn(s.mapper)
+		if payload != "" && len(addBins) == 0 && len(subBins) == 0 && len(putBins) == 1 {
+			if v, ok := putBins[payload]; ok {
+				operates = append(operates, as.MapPutOp(mapPolicy, s.collectionBin, as.NewValue(s.mapKeyValues[0]), v))
+			} else {
+				// fall back to nested ops
+				for key, value := range putBins {
+					operates = append(operates, as.MapPutOp(mapPolicy, s.collectionBin, key, value, binKey))
+				}
+			}
+			// add/sub bins remain empty in this branch
+		} else {
+			for key, value := range addBins {
+				operates = append(operates, as.MapIncrementOp(mapPolicy, s.collectionBin, key, value, binKey))
+			}
+			for key, value := range subBins {
+				operates = append(operates, as.MapDecrementOp(mapPolicy, s.collectionBin, key, value, binKey))
+			}
+			for key, value := range putBins {
+				operates = append(operates, as.MapPutOp(mapPolicy, s.collectionBin, key, value, binKey))
+			}
 		}
 	} else if s.collectionType.IsArray() || s.collectionType == "" {
 		for key, value := range addBins {

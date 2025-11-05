@@ -187,7 +187,9 @@ func (s *Statement) handleMapLoad(args []driver.NamedValue) error {
 			} else {
 
 				for k, v := range group {
-					values[k] = v
+					// v is bins map for a single entry; convert to entry value (object or scalar)
+					entry := s.buildMapEntryValueFromIfaceMap(v)
+					values[k] = entry
 				}
 				ops = append(ops, as.MapPutItemsOp(mapPolicy, s.collectionBin, values))
 			}
@@ -493,11 +495,92 @@ func (s *Statement) handleInsert(args []driver.NamedValue) error {
 
 func (s *Statement) handleMapInsert(bins map[string]interface{}, err error, writePolicy *as.WritePolicy, key *as.Key) error {
 	mapKey := s.getKey(s.mapper.mapKey, bins)
+	// Build entry value from bins (object or scalar)
+	entry := s.buildMapEntryValueFromStringMap(bins)
 	ops := []*as.Operation{
-		as.MapPutOp(as.DefaultMapPolicy(), s.collectionBin, mapKey, bins),
+		as.MapPutOp(as.DefaultMapPolicy(), s.collectionBin, mapKey, entry),
 	}
 	_, err = s.client.Operate(writePolicy, key, ops...)
 	return err
+}
+
+// buildMapEntryValueFromIfaceMap converts full row bins into a single map entry value.
+// It removes pk/mapKey (and array index) and collapses into a scalar when only the payload column remains.
+func (s *Statement) buildMapEntryValueFromIfaceMap(bins map[interface{}]interface{}) interface{} {
+	if s.mapper == nil {
+		return bins
+	}
+	payload := findPayloadColumn(s.mapper)
+	// Build object excluding pk and mapKey and list index
+	obj := make(map[interface{}]interface{})
+	for k, v := range bins {
+		col, _ := k.(string)
+		skip := false
+		if len(s.mapper.pk) > 0 && col == s.mapper.pk[0].Column() {
+			skip = true
+		}
+		if len(s.mapper.mapKey) > 0 && col == s.mapper.mapKey[0].Column() {
+			skip = true
+		}
+		if s.mapper.arrayIndex != nil && col == s.mapper.arrayIndex.Column() {
+			skip = true
+		}
+		if !skip {
+			obj[k] = v
+		}
+	}
+	if len(obj) == 1 && payload != "" {
+		if val, ok := obj[payload]; ok {
+			return val
+		}
+		// keys in obj are interface{}, try string cast
+		for k, v := range obj {
+			if ks, ok := k.(string); ok && ks == payload {
+				return v
+			}
+		}
+	}
+	return obj
+}
+
+// buildMapEntryValueFromStringMap converts full row bins (string-keyed) into a map entry value.
+func (s *Statement) buildMapEntryValueFromStringMap(bins map[string]interface{}) interface{} {
+	if s.mapper == nil {
+		// Upcast to interface-keyed map
+		tmp := make(map[interface{}]interface{}, len(bins))
+		for k, v := range bins {
+			tmp[k] = v
+		}
+		return tmp
+	}
+	payload := findPayloadColumn(s.mapper)
+	obj := make(map[interface{}]interface{})
+	for k, v := range bins {
+		skip := false
+		if len(s.mapper.pk) > 0 && k == s.mapper.pk[0].Column() {
+			skip = true
+		}
+		if len(s.mapper.mapKey) > 0 && k == s.mapper.mapKey[0].Column() {
+			skip = true
+		}
+		if s.mapper.arrayIndex != nil && k == s.mapper.arrayIndex.Column() {
+			skip = true
+		}
+		if !skip {
+			obj[k] = v
+		}
+	}
+	if len(obj) == 1 && payload != "" {
+		if val, ok := obj[payload]; ok {
+			return val
+		}
+		for k, v := range obj {
+			if ks, ok := k.(string); ok && ks == payload {
+				return v
+			}
+		}
+	}
+	return obj
 }
 
 func (s *Statement) handleMerge(bins map[string]interface{}, writePolicy *as.WritePolicy, key *as.Key) error {
