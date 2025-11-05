@@ -5,13 +5,14 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
+	"reflect"
+	"unsafe"
+
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/structology"
 	"github.com/viant/xunsafe"
-	"io"
-	"reflect"
-	"unsafe"
 )
 
 type Rows struct {
@@ -83,6 +84,41 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 			}
 			continue
 		}
+
+		// Special-case for []byte destinations to ensure proper assignment and not losing data.
+		// Handle both []byte and *[]byte struct fields and surface []byte to the SQL layer.
+		if (aField.Type.Kind() == reflect.Slice && aField.Type.Elem().Kind() == reflect.Uint8) ||
+			(aField.Type.Kind() == reflect.Ptr && aField.Type.Elem().Kind() == reflect.Slice && aField.Type.Elem().Elem().Kind() == reflect.Uint8) {
+			var bytesVal []byte
+			switch vb := value.(type) {
+			case []byte:
+				// copy to avoid aliasing driver internals
+				bytesVal = append([]byte(nil), vb...)
+			case string:
+				bytesVal = []byte(vb)
+			default:
+				// attempt conversion if type is convertible to []byte
+				v := reflect.ValueOf(value)
+				if v.IsValid() && v.Type().Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+					bytesVal = append([]byte(nil), v.Bytes()...)
+				}
+			}
+
+			// assign to struct field
+			if aField.Type.Kind() == reflect.Slice { // []byte
+				aField.SetValue(ptr, bytesVal)
+				dest[i] = bytesVal
+				continue
+			}
+			if aField.Type.Kind() == reflect.Ptr { // *[]byte
+				ptrToSlice := reflect.New(aField.Type.Elem())
+				ptrToSlice.Elem().Set(reflect.ValueOf(bytesVal))
+				aField.SetValue(ptr, ptrToSlice.Interface())
+				dest[i] = bytesVal
+				continue
+			}
+		}
+
 		srcType := reflect.TypeOf(value)
 		if srcType == aField.Type {
 			aField.Set(ptr, value)

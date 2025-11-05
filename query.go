@@ -4,6 +4,10 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
+	"reflect"
+	"strings"
+	"unsafe"
+
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/parsly"
 	"github.com/viant/sqlparser"
@@ -12,9 +16,6 @@ import (
 	"github.com/viant/sqlparser/query"
 	"github.com/viant/x"
 	"github.com/viant/xunsafe"
-	"reflect"
-	"strings"
-	"unsafe"
 )
 
 func (s *Statement) prepareSelect(SQL string) error {
@@ -164,7 +165,10 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		return rows, nil
 	}
 
-	bins := s.mapper.expandBins()
+	// Use the query-specific mapper for selecting bin names to fetch.
+	// This ensures we request exactly the columns the query needs
+	// and avoids mismatches with the type-based (full) mapper.
+	bins := aMapper.expandBins()
 
 	if len(s.secondaryIndexValues) > 0 {
 		stmt := as.NewStatement(s.namespace, s.set, bins...)
