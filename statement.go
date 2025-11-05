@@ -88,23 +88,23 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 	case sqlparser.KindRegisterSet:
 		return s.handleRegisterSet(args)
 	case sqlparser.KindInsert:
-		if err := s.handleInsert(args); err != nil {
+		if err := s.handleInsert(ctx, args); err != nil {
 			return nil, err
 		}
 	case sqlparser.KindUpdate:
-		if err := s.handleUpdate(args); err != nil {
+		if err := s.handleUpdate(ctx, args); err != nil {
 			return nil, err
 		}
 	case sqlparser.KindDelete:
-		return nil, s.handleDelete(args)
+		return nil, s.handleDelete(ctx)
 	case sqlparser.KindSelect:
 		return nil, fmt.Errorf("unsupported parameterizedQuery type: %v", s.kind)
 	case sqlparser.KindDropIndex:
-		return s.handleDropIndex(args)
+		return s.handleDropIndex(ctx)
 	case sqlparser.KindCreateIndex:
-		return s.handleCreateIndex(args)
+		return s.handleCreateIndex(ctx)
 	case sqlparser.KindTruncateTable:
-		return s.handleTruncateTable(args)
+		return s.handleTruncateTable(ctx)
 	}
 
 	if s.lastInsertID != nil {
@@ -467,14 +467,14 @@ func (s *Statement) setTypeBasedMapper() error {
 	return nil
 }
 
-func (s *Statement) handleDelete(args []driver.NamedValue) error {
+func (s *Statement) handleDelete(ctx context.Context) error {
 	if s.delete.Qualify == nil {
-		return s.client.Truncate(nil, s.namespace, s.set, nil)
+		return s.truncateWithCtx(ctx, nil, s.namespace, s.set, nil)
 	}
 	if isDryRun("delete") {
 		return nil
 	}
-	//TODO add support for single/batch delete
+
 	return fmt.Errorf("not yet supported")
 }
 

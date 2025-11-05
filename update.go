@@ -1,6 +1,7 @@
 package aerospike
 
 import (
+	"context"
 	"database/sql/driver"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
@@ -17,11 +18,11 @@ func (s *Statement) prepareUpdate(sql string) error {
 	return nil
 }
 
-func (s *Statement) handleUpdate(args []driver.NamedValue) error {
+func (s *Statement) handleUpdate(ctx context.Context, args []driver.NamedValue) error {
 	if s.update == nil {
 		return fmt.Errorf("update statement is not initialized")
 	}
-	//TODO update me
+
 	s.affected = 1
 	if s.writeLimiter != nil {
 		defer s.writeLimiter.release()
@@ -152,7 +153,7 @@ func (s *Statement) handleUpdate(args []driver.NamedValue) error {
 
 	writePolicy := s.writePolicy(aSet, false)
 	for _, key := range keys {
-		if _, err = s.client.Operate(writePolicy, key, operates...); err != nil {
+		if _, err = s.operateWithCtx(ctx, writePolicy, key, operates); err != nil {
 			return err
 		}
 	}

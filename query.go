@@ -182,7 +182,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			}
 		}
 		// Execute the query
-		recordset, err := s.client.Query(nil, stmt)
+		recordset, err := s.queryWithCtx(ctx, nil, stmt)
 		if err != nil {
 			return nil, err
 		}
@@ -205,7 +205,7 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 			return nil, fmt.Errorf("executeselect: unsupported parameterizedQuery without mapKey")
 			//use parameterizedQuery call
 		} else {
-			recordset, err := s.client.ScanAll(as.NewScanPolicy(), s.namespace, s.set)
+			recordset, err := s.scanAllWithCtx(ctx, nil, s.namespace, s.set, nil)
 			if err != nil {
 				return nil, fmt.Errorf("executeselect: unable to scan set %s due to %w", s.set, err)
 			}
@@ -214,17 +214,17 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 		}
 	case 1:
 		if s.collectionType.IsMap() {
-			return s.handleMapQuery(keys, rows)
+			return s.handleMapQuery(ctx, keys, rows)
 		}
 		if s.collectionType.IsArray() {
-			return s.handleListQuery(keys, rows)
+			return s.handleListQuery(ctx, keys, rows)
 		}
 
 		var record *as.Record
 		if s.query.List.IsStarExpr() {
-			record, err = s.client.Get(nil, keys[0])
+			record, err = s.getWithCtx(ctx, nil, keys[0], nil)
 		} else {
-			record, err = s.client.Get(nil, keys[0], bins...)
+			record, err = s.getWithCtx(ctx, nil, keys[0], bins)
 		}
 		if err != nil {
 			return handleNotFoundError(err, rows)
@@ -233,14 +233,14 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 	default:
 
 		if len(aMapper.aggregateColumn) > 0 {
-			err = s.handleGroupBy(rows, keys)
+			err = s.handleGroupBy(ctx, rows, keys)
 			if err != nil {
 				return nil, err
 			}
 			return rows, nil
 		}
 
-		records, err := s.client.BatchGet(as.NewBatchPolicy(), keys)
+		records, err := s.batchGetWithCtx(ctx, nil, keys, nil)
 		recs := make([]*as.Record, 0)
 		if s.collectionType.IsMap() {
 			for i := range records {
@@ -308,17 +308,25 @@ func unwrapQualify(n node.Node) node.Node {
 	return n
 }
 
-func (s *Statement) handleGroupBy(rows *Rows, keys []*as.Key) error {
+func (s *Statement) handleGroupBy(ctx context.Context, rows *Rows, keys []*as.Key) error {
 	var records []*as.Record
 	var aggColumn string
 	var err error
+
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return err
+	}
+
 	for _, key := range keys {
 		var operations []*as.Operation
 		aggColumn, err = s.getAggregateOperation(rows, &operations)
 		if err != nil {
 			return err
 		}
-		result, err := s.client.Operate(nil, key, operations...)
+
+		writePolicy := s.writePolicy(aSet, false)
+		result, err := s.operateWithCtx(ctx, writePolicy, key, operations)
 		if err != nil {
 			if IsKeyNotFound(err) {
 				break
@@ -364,14 +372,21 @@ func (s *Statement) lookupSet() (*set, error) {
 	return aSet, nil
 }
 
-func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, error) {
+func (s *Statement) handleMapQuery(ctx context.Context, keys []*as.Key, rows *Rows) (driver.Rows, error) {
 
 	if s.mapper.component != nil {
-		return s.handleMapListQuery(keys, rows)
+		return s.handleMapListQuery(ctx, keys, rows)
 	}
 
 	var err error
 	var op []*as.Operation
+
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return nil, err
+	}
+	writePolicy := s.writePolicy(aSet, false)
+
 	if s.mapRangeFilter != nil || len(s.mapKeyValues) > 0 {
 		switch {
 		case s.mapRangeFilter != nil && len(s.mapKeyValues) > 0:
@@ -383,7 +398,7 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 		case len(s.mapKeyValues) > 1:
 			op = append(op, as.MapGetByKeyListOp(s.collectionBin, s.mapKeyValues, as.MapReturnType.KEY_VALUE))
 		}
-		result, err := s.client.Operate(nil, keys[0], op...)
+		result, err := s.operateWithCtx(ctx, writePolicy, keys[0], op)
 		if err != nil {
 			return handleNotFoundError(err, rows)
 		}
@@ -404,7 +419,7 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 		rows.rowsReader = newRowsReader(recs)
 		return rows, nil
 	}
-	record, err := s.client.Get(nil, keys[0], s.mapper.pk[0].Column(), s.collectionBin)
+	record, err := s.getWithCtx(ctx, nil, keys[0], []string{s.mapper.pk[0].Column(), s.collectionBin})
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}
@@ -416,9 +431,16 @@ func (s *Statement) handleMapQuery(keys []*as.Key, rows *Rows) (driver.Rows, err
 	return rows, nil
 }
 
-func (s *Statement) handleMapListQuery(keys []*as.Key, rows *Rows) (driver.Rows, error) {
+func (s *Statement) handleMapListQuery(ctx context.Context, keys []*as.Key, rows *Rows) (driver.Rows, error) {
 	var err error
 	var op []*as.Operation
+
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return nil, err
+	}
+	writePolicy := s.writePolicy(aSet, false)
+
 	if s.mapRangeFilter != nil || len(s.mapKeyValues) > 0 {
 		switch {
 		case s.mapRangeFilter != nil && len(s.mapKeyValues) > 0:
@@ -431,7 +453,7 @@ func (s *Statement) handleMapListQuery(keys []*as.Key, rows *Rows) (driver.Rows,
 		case len(s.mapKeyValues) > 1:
 			op = append(op, as.MapGetByKeyListOp(s.collectionBin, s.mapKeyValues, as.MapReturnType.KEY_VALUE))
 		}
-		result, err := s.client.Operate(nil, keys[0], op...)
+		result, err := s.operateWithCtx(ctx, writePolicy, keys[0], op)
 		if err != nil {
 			return handleNotFoundError(err, rows)
 		}
@@ -452,7 +474,7 @@ func (s *Statement) handleMapListQuery(keys []*as.Key, rows *Rows) (driver.Rows,
 		rows.rowsReader = newRowsReader(recs)
 		return rows, nil
 	}
-	record, err := s.client.Get(nil, keys[0], s.mapper.pk[0].Column(), s.collectionBin)
+	record, err := s.getWithCtx(ctx, nil, keys[0], []string{s.mapper.pk[0].Column(), s.collectionBin})
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}
@@ -583,11 +605,18 @@ func handleNotFoundError(err error, rows *Rows) (driver.Rows, error) {
 	return nil, err
 }
 
-func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, error) {
+func (s *Statement) handleListQuery(ctx context.Context, keys []*as.Key, rows *Rows) (driver.Rows, error) {
 	var err error
 
 	var operations []*as.Operation
 	var aggColumn string
+
+	aSet, err := s.lookupSet()
+	if err != nil {
+		return nil, err
+	}
+	writePolicy := s.writePolicy(aSet, false)
+
 	if len(rows.mapper.aggregateColumn) > 0 { //for only one  aggregation func
 		if aggColumn, err = s.getAggregateOperation(rows, &operations); err != nil {
 			return nil, err
@@ -608,7 +637,7 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 	}
 
 	if len(operations) > 0 {
-		result, err := s.client.Operate(nil, keys[0], operations...)
+		result, err := s.operateWithCtx(ctx, writePolicy, keys[0], operations)
 		if err != nil {
 			return handleNotFoundError(err, rows)
 		}
@@ -639,7 +668,7 @@ func (s *Statement) handleListQuery(keys []*as.Key, rows *Rows) (driver.Rows, er
 		return rows, nil
 	}
 
-	record, err := s.client.Get(nil, keys[0], s.collectionBin, s.mapper.pk[0].Column())
+	record, err := s.getWithCtx(ctx, nil, keys[0], []string{s.collectionBin, s.mapper.pk[0].Column()})
 	if err != nil {
 		return handleNotFoundError(err, rows)
 	}
