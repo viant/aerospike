@@ -429,9 +429,31 @@ func (s *Statement) handleMapQuery(ctx context.Context, keys []*as.Key, rows *Ro
 		case s.mapRangeFilter != nil:
 			op = append(op, as.MapGetByKeyRangeOp(s.collectionBin, s.mapRangeFilter.begin, s.mapRangeFilter.end+1, as.MapReturnType.KEY_VALUE))
 		case len(s.mapKeyValues) == 1:
-			op = append(op, as.MapGetByKeyOp(s.collectionBin, s.mapKeyValues[0], as.MapReturnType.KEY_VALUE))
+			// normalize pointer map key if necessary
+			mk := s.mapKeyValues[0]
+			if rv := reflect.ValueOf(mk); rv.IsValid() && rv.Kind() == reflect.Ptr {
+				if rv.IsNil() {
+					mk = nil
+				} else {
+					mk = rv.Elem().Interface()
+				}
+			}
+			op = append(op, as.MapGetByKeyOp(s.collectionBin, mk, as.MapReturnType.KEY_VALUE))
 		case len(s.mapKeyValues) > 1:
-			op = append(op, as.MapGetByKeyListOp(s.collectionBin, s.mapKeyValues, as.MapReturnType.KEY_VALUE))
+			// normalize pointer keys in list
+			keys := make([]interface{}, len(s.mapKeyValues))
+			for i, v := range s.mapKeyValues {
+				if rv := reflect.ValueOf(v); rv.IsValid() && rv.Kind() == reflect.Ptr {
+					if rv.IsNil() {
+						keys[i] = nil
+					} else {
+						keys[i] = rv.Elem().Interface()
+					}
+				} else {
+					keys[i] = v
+				}
+			}
+			op = append(op, as.MapGetByKeyListOp(s.collectionBin, keys, as.MapReturnType.KEY_VALUE))
 		}
 		result, err := s.operateWithCtx(ctx, writePolicy, keys[0], op)
 		if err != nil {

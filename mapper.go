@@ -74,6 +74,13 @@ func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 		}
 	}
 	if valueType.Kind() == f.Type.Kind() {
+		// If both kinds match and it's a pointer (non-time), deref to store primitive
+		if valueType.Kind() == reflect.Ptr && valueType != timePtrType && valueType != timeDoublePtrType {
+			if v, err := extractValue(value); err == nil {
+				value = v
+				valueType = reflect.TypeOf(value)
+			}
+		}
 		if valueType == timeType {
 			v, ok := value.(time.Time)
 			if !ok {
@@ -261,6 +268,14 @@ func extractKeyValue(value interface{}) (interface{}, error) {
 			return "", nil
 		}
 		return *actual, nil
+	}
+	// Generic: if value is a pointer to a supported type, dereference it
+	v := reflect.ValueOf(value)
+	if v.IsValid() && v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil, nil
+		}
+		return v.Elem().Interface(), nil
 	}
 	return value, nil
 }

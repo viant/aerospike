@@ -109,12 +109,22 @@ func (s *Statement) handleUpdate(ctx context.Context, args []driver.NamedValue) 
 			return fmt.Errorf("update statement map must have one map mapKey")
 		}
 		mapPolicy := as.NewMapPolicy(as.MapOrder.KEY_ORDERED, as.MapWriteMode.UPDATE)
-		binKey := as.CtxMapKey(as.NewValue(s.mapKeyValues[0]))
+		// ensure map key is not a pointer type
+		mk := s.mapKeyValues[0]
+		if rv := reflect.ValueOf(mk); rv.IsValid() && rv.Kind() == reflect.Ptr {
+			if rv.IsNil() {
+				mk = nil
+			} else {
+				mk = rv.Elem().Interface()
+			}
+		}
+		binKey := as.CtxMapKey(as.NewValue(mk))
 		// If the update only sets the payload column and no add/sub, replace entire entry value
 		payload := findPayloadColumn(s.mapper)
 		if payload != "" && len(addBins) == 0 && len(subBins) == 0 && len(putBins) == 1 {
 			if v, ok := putBins[payload]; ok {
-				operates = append(operates, as.MapPutOp(mapPolicy, s.collectionBin, as.NewValue(s.mapKeyValues[0]), v))
+				// key already normalized in mk
+				operates = append(operates, as.MapPutOp(mapPolicy, s.collectionBin, as.NewValue(mk), v))
 			} else {
 				// fall back to nested ops
 				for key, value := range putBins {

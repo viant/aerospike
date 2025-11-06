@@ -304,6 +304,18 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		var exprValues = values.Values(func(idx int) interface{} {
 			return args[idx].Value
 		})
+		// Dereference pointer arguments so Aerospike never receives pointer types for keys/values
+		for i := range exprValues {
+			v := reflect.ValueOf(exprValues[i])
+			for v.IsValid() && v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					exprValues[i] = nil
+					break
+				}
+				v = v.Elem()
+				exprValues[i] = v.Interface()
+			}
+		}
 		idx = values.Idx
 		//TODO add support for multi in (col1,col2) IN((?, ?), (?, ?))
 		if isMultiInPk {
@@ -480,14 +492,23 @@ func (s *Statement) handleDelete(ctx context.Context) error {
 
 func (s *Statement) getKey(fields []*field, bins map[string]interface{}) interface{} {
 	if len(fields) == 1 {
-		return bins[fields[0].Column()]
+		v := bins[fields[0].Column()]
+		if out, err := extractKeyValue(v); err == nil {
+			return out
+		}
+		return v
 	}
 	builder := strings.Builder{}
 	for i, key := range fields {
 		if i > 0 {
 			builder.WriteString(":")
 		}
-		builder.WriteString(fmt.Sprintf("%v", bins[key.Column()]))
+		v := bins[key.Column()]
+		if out, err := extractKeyValue(v); err == nil {
+			builder.WriteString(fmt.Sprintf("%v", out))
+		} else {
+			builder.WriteString(fmt.Sprintf("%v", v))
+		}
 	}
 	return nil
 }
