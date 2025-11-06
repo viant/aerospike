@@ -8,6 +8,7 @@ import (
 	ainsert "github.com/viant/aerospike/insert"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
+	"reflect"
 	"strings"
 	"sync"
 )
@@ -545,6 +546,16 @@ func (s *Statement) populateInsertBins(args []driver.NamedValue, argIndex *int) 
 		value, err := aField.ensureValidValueType(value)
 		if err != nil {
 			return nil, err
+		}
+		// Normalize custom byte-slice types (e.g., json.RawMessage) to []byte for Aerospike
+		if value != nil {
+			v := reflect.ValueOf(value)
+			if v.IsValid() && v.Type().Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+				base := reflect.TypeOf([]byte(nil))
+				if v.Type() != base && v.Type().ConvertibleTo(base) {
+					value = v.Convert(base).Interface()
+				}
+			}
 		}
 		bins[aField.Column()] = value
 	}

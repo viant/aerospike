@@ -1,6 +1,7 @@
 package aerospike
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
@@ -200,6 +201,12 @@ func extractValue(value interface{}) (interface{}, error) {
 			return nil, nil
 		}
 		return *actual, nil
+	case *json.RawMessage:
+		if actual == nil {
+			return nil, nil
+		}
+		// store as []byte to ensure Aerospike client treats it as a blob
+		return []byte(*actual), nil
 	case *[]int:
 		if actual == nil {
 			return nil, nil

@@ -7,6 +7,7 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
+	"reflect"
 )
 
 func (s *Statement) prepareUpdate(sql string) error {
@@ -83,6 +84,16 @@ func (s *Statement) handleUpdate(ctx context.Context, args []driver.NamedValue) 
 			value, err = aField.ensureValidValueType(value)
 			if err != nil {
 				return err
+			}
+			// Normalize custom []byte-like types (e.g., json.RawMessage) to []byte so Aerospike stores blob
+			if value != nil {
+				v := reflect.ValueOf(value)
+				if v.IsValid() && v.Type().Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+					base := reflect.TypeOf([]byte(nil))
+					if v.Type() != base && v.Type().ConvertibleTo(base) {
+						value = v.Convert(base).Interface()
+					}
+				}
 			}
 			putBins[aField.Column()] = value
 		}

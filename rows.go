@@ -85,8 +85,8 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 			continue
 		}
 
-		// Special-case for []byte destinations to ensure proper assignment and not losing data.
-		// Handle both []byte and *[]byte struct fields and surface []byte to the SQL layer.
+		// Special-case for byte slice-like fields (e.g., []byte, json.RawMessage, or pointers to these)
+		// Ensure assignment to struct fields uses the correct concrete type and surface []byte to SQL layer.
 		if (aField.Type.Kind() == reflect.Slice && aField.Type.Elem().Kind() == reflect.Uint8) ||
 			(aField.Type.Kind() == reflect.Ptr && aField.Type.Elem().Kind() == reflect.Slice && aField.Type.Elem().Elem().Kind() == reflect.Uint8) {
 			var bytesVal []byte
@@ -104,15 +104,24 @@ func (r *Rows) transferBinValues(dest []driver.Value, record *as.Record, ptr uns
 				}
 			}
 
-			// assign to struct field
-			if aField.Type.Kind() == reflect.Slice { // []byte
-				aField.SetValue(ptr, bytesVal)
+			// assign to struct field respecting defined slice types like json.RawMessage
+			if aField.Type.Kind() == reflect.Slice { // []byte or custom byte slice type
+				v := reflect.ValueOf(bytesVal)
+				if v.Type() != aField.Type && v.Type().ConvertibleTo(aField.Type) {
+					v = v.Convert(aField.Type)
+				}
+				aField.SetValue(ptr, v.Interface())
 				dest[i] = bytesVal
 				continue
 			}
-			if aField.Type.Kind() == reflect.Ptr { // *[]byte
-				ptrToSlice := reflect.New(aField.Type.Elem())
-				ptrToSlice.Elem().Set(reflect.ValueOf(bytesVal))
+			if aField.Type.Kind() == reflect.Ptr { // pointer to []byte or custom byte slice type
+				elemType := aField.Type.Elem()
+				v := reflect.ValueOf(bytesVal)
+				if v.Type() != elemType && v.Type().ConvertibleTo(elemType) {
+					v = v.Convert(elemType)
+				}
+				ptrToSlice := reflect.New(elemType)
+				ptrToSlice.Elem().Set(v)
 				aField.SetValue(ptr, ptrToSlice.Interface())
 				dest[i] = bytesVal
 				continue
