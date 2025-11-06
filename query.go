@@ -214,7 +214,38 @@ func (s *Statement) executeSelect(ctx context.Context, args []driver.NamedValue)
 				return nil, fmt.Errorf("executeselect: unable to scan set %s due to %w", s.set, err)
 			}
 
-			rows.rowsReader = &RowsScanReader{Recordset: recordset}
+			// For map/array collections, expand collection items into flat rows.
+			if s.collectionType.IsMap() {
+				var recs []*as.Record
+				for res := range recordset.Results() {
+					if res.Err != nil {
+						return nil, res.Err
+					}
+					if res.Record == nil {
+						continue
+					}
+					if err := s.handleMapBinResult(res.Record, &recs); err != nil {
+						return nil, err
+					}
+				}
+				rows.rowsReader = newRowsReader(recs)
+			} else if s.collectionType.IsArray() {
+				var recs []*as.Record
+				for res := range recordset.Results() {
+					if res.Err != nil {
+						return nil, res.Err
+					}
+					if res.Record == nil {
+						continue
+					}
+					if err := s.handleListBinResult(res.Record, &recs, true); err != nil {
+						return nil, err
+					}
+				}
+				rows.rowsReader = newRowsReader(recs)
+			} else {
+				rows.rowsReader = &RowsScanReader{Recordset: recordset}
+			}
 		}
 	case 1:
 		if s.collectionType.IsMap() {
@@ -712,7 +743,7 @@ func (s *Statement) handleListBinResult(record *as.Record, records *[]*as.Record
 			for k, v := range properties {
 				itemRecord.Bins[k.(string)] = v
 			}
-			if _, ok := itemRecord.Bins[s.mapper.arrayIndex.Column()]; !ok {
+			if val, ok := itemRecord.Bins[s.mapper.arrayIndex.Column()]; !ok || val == nil {
 				itemRecord.Bins[s.mapper.arrayIndex.Column()] = index
 			}
 			itemRecord.Bins[s.mapper.pk[0].Column()] = record.Key.Value()
@@ -762,13 +793,13 @@ func (s *Statement) handleMapBinResult(record *as.Record, records *[]*as.Record)
 				// Ensure pk and mapKey bins exist
 				if s.mapper != nil && len(s.mapper.pk) > 0 {
 					pkCol := s.mapper.pk[0].Column()
-					if _, exists := rec.Bins[pkCol]; !exists {
+					if val, exists := rec.Bins[pkCol]; !exists || val == nil {
 						rec.Bins[pkCol] = record.Key.Value()
 					}
 				}
 				if s.mapper != nil && len(s.mapper.mapKey) > 0 {
 					mkCol := s.mapper.mapKey[0].Column()
-					if _, exists := rec.Bins[mkCol]; !exists {
+					if val, exists := rec.Bins[mkCol]; !exists || val == nil {
 						rec.Bins[mkCol] = mapKey
 					}
 				}

@@ -3,16 +3,17 @@ package aerospike
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/viant/sqlparser"
-	"github.com/viant/sqlparser/expr"
-	"github.com/viant/sqlparser/query"
-	"github.com/viant/structology"
-	"github.com/viant/xunsafe"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/viant/sqlparser"
+	"github.com/viant/sqlparser/expr"
+	"github.com/viant/sqlparser/query"
+	"github.com/viant/structology"
+	"github.com/viant/xunsafe"
 )
 
 var timeType = reflect.TypeOf(time.Time{})
@@ -57,6 +58,20 @@ func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 	valueType := reflect.TypeOf(value)
 	if valueType == nil {
 		valueType = f.Type
+	}
+
+	// If both the incoming value and field types are pointers but with different depths,
+	// unwrap the incoming value pointers (e.g., **bool -> *bool or bool) to avoid passing
+	// unsupported pointer types to the Aerospike client. Skip special time handling to
+	// preserve existing UnixSec conversions.
+	if value != nil && valueType.Kind() == reflect.Ptr && f.Type.Kind() == reflect.Ptr && valueType != f.Type {
+		// Avoid unwrapping time pointers here; they are handled explicitly below.
+		if f.Type != timePtrType && f.Type != timeDoublePtrType {
+			if v, err := extractValue(value); err == nil {
+				value = v
+				valueType = reflect.TypeOf(value)
+			}
+		}
 	}
 	if valueType.Kind() == f.Type.Kind() {
 		if valueType == timeType {
@@ -223,6 +238,18 @@ func extractValue(value interface{}) (interface{}, error) {
 		}
 		return *actual, nil
 	default:
+		// Generic pointer dereference fallback, supports cases like **bool, **int, etc.
+		rv := reflect.ValueOf(value)
+		if rv.IsValid() && rv.Kind() == reflect.Ptr {
+			// Walk through nested pointers until reaching a non-pointer or nil
+			for rv.Kind() == reflect.Ptr {
+				if rv.IsNil() {
+					return nil, nil
+				}
+				rv = rv.Elem()
+			}
+			return rv.Interface(), nil
+		}
 		return nil, fmt.Errorf("extractValue: unsupported type %T", actual)
 	}
 }
