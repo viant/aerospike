@@ -70,15 +70,23 @@ func (f *field) ensureValidValueType(value interface{}) (interface{}, error) {
 			if v, err := extractValue(value); err == nil {
 				value = v
 				valueType = reflect.TypeOf(value)
+				if valueType == nil {
+					// If extracted value is nil, keep processing with field type to avoid nil Type panic
+					valueType = f.Type
+				}
 			}
 		}
 	}
-	if valueType.Kind() == f.Type.Kind() {
+	if valueType != nil && valueType.Kind() == f.Type.Kind() {
 		// If both kinds match and it's a pointer (non-time), deref to store primitive
 		if valueType.Kind() == reflect.Ptr && valueType != timePtrType && valueType != timeDoublePtrType {
 			if v, err := extractValue(value); err == nil {
 				value = v
 				valueType = reflect.TypeOf(value)
+				if valueType == nil {
+					// When deref results in nil, default back to field type
+					valueType = f.Type
+				}
 			}
 		}
 		if valueType == timeType {
