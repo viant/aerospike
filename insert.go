@@ -4,13 +4,14 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
+	"reflect"
+	"strings"
+	"sync"
+
 	as "github.com/aerospike/aerospike-client-go/v6"
 	ainsert "github.com/viant/aerospike/insert"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
-	"reflect"
-	"strings"
-	"sync"
 )
 
 func (s *Statement) prepareInsert(sql string, c *connection) error {
@@ -477,7 +478,7 @@ func (s *Statement) handleInsert(ctx context.Context, args []driver.NamedValue) 
 		writePolicy := s.writePolicy(aSet, true)
 
 		if s.collectionBin != "" {
-			return s.handleMapInsert(ctx, bins, err, writePolicy, key)
+			return s.handleMapInsert(ctx, bins, writePolicy, key)
 		}
 		if isMerge {
 			if err := s.handleMerge(ctx, bins, writePolicy, key); err != nil {
@@ -494,7 +495,7 @@ func (s *Statement) handleInsert(ctx context.Context, args []driver.NamedValue) 
 	return nil
 }
 
-func (s *Statement) handleMapInsert(ctx context.Context, bins map[string]interface{}, err error, writePolicy *as.WritePolicy, key *as.Key) error {
+func (s *Statement) handleMapInsert(ctx context.Context, bins map[string]interface{}, writePolicy *as.WritePolicy, key *as.Key) (err error) {
 	mapKey := s.getKey(s.mapper.mapKey, bins)
 	// Collapse bins into a single entry value (scalar or object) excluding pk/mapKey/index
 	entry := s.buildMapEntryValueFromStringMap(bins)
