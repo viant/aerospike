@@ -54,6 +54,7 @@ type Statement struct {
 	dropIndex        *index.Drop
 	mapper           *mapper
 	filter           *as.Filter
+	writeFilter      *as.Expression
 	mapRangeFilter   *rangeBinFilter
 	arrayRangeFilter *rangeBinFilter
 	recordType       reflect.Type
@@ -111,6 +112,7 @@ func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (
 		ret.lastInsertedID = *s.lastInsertID
 		ret.hasLastInsertedID = true
 	}
+	ret.totalRows = s.affected
 	return ret, nil
 }
 
@@ -371,6 +373,9 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 			}
 		default:
 			if !includeFilter {
+				if strings.EqualFold(operator, "=") && len(exprValues) == 1 {
+					return s.appendWriteEquality(name, exprValues[0])
+				}
 				return fmt.Errorf("unsupported criteria: %s", name)
 			}
 			switch strings.ToLower(operator) {
@@ -527,6 +532,7 @@ func (s *Statement) cleanup() {
 
 	s.writeLimiter = nil
 	s.mapper = nil
+	s.writeFilter = nil
 }
 
 // IsKeyNotFound returns true if mapKey not found error.
