@@ -5,6 +5,9 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
+
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/aerospike/aerospike-client-go/v6/types"
 	ainsert "github.com/viant/aerospike/insert"
@@ -18,8 +21,6 @@ import (
 	"github.com/viant/sqlparser/update"
 	"github.com/viant/x"
 	"github.com/viant/xreflect"
-	"reflect"
-	"strings"
 )
 
 type collectionType string
@@ -246,7 +247,6 @@ func (s *Statement) setRecordType(aSet *set) error {
 	s.recordType = aSet.xType.Type
 	return nil
 }
-
 func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedValue, includeFilter bool) error {
 	if qualify == nil {
 		return nil
@@ -276,25 +276,21 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 	isMultiInPk := len(s.mapper.pk) > 1
 	isMultiInKey := len(s.mapper.mapKey) > 1
 	isSecondaryIndexKey := s.mapper.secondaryIndex != nil
-	if binary.Op == "=" {
-		if leftLiteral, ok := binary.X.(*expr.Literal); ok {
-			if rightLiteral, ok := binary.Y.(*expr.Literal); ok {
-				s.falsePredicate = !(leftLiteral.Value == rightLiteral.Value)
-				return nil
-			} else {
-				if rightBinary, ok := binary.Y.(*expr.Binary); ok {
-					if rightLiteral, ok := rightBinary.X.(*expr.Literal); ok {
-						s.falsePredicate = !(leftLiteral.Value == rightLiteral.Value)
-						return nil
-					}
-				}
-			}
-		}
+	if hasFalsePredicate(binary) {
+		s.falsePredicate = true
+		return nil
 	}
 	idx := 0
 	err := binary.Walk(func(ident node.Node, values *expr.Values, operator, parentOperator string) error {
 		if parentOperator != "" && strings.ToUpper(parentOperator) != "AND" {
 			return fmt.Errorf("unuspported logical operator: %s", parentOperator)
+		}
+		// Constant predicates have no identifier or bound values. Datly adds
+		// `1 = 0` while discovering a query schema, and it can be nested under
+		// AND with regular predicates. A false constant is handled above; a true
+		// constant does not constrain an Aerospike query and can be ignored.
+		if ident == nil || values == nil {
+			return nil
 		}
 		values.Idx = idx
 		name := strings.ToLower(sqlparser.Stringify(ident))
@@ -403,6 +399,37 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		return err
 	}
 	return nil
+}
+
+func hasFalsePredicate(expression node.Node) bool {
+	switch actual := expression.(type) {
+	case *expr.Parenthesis:
+		return hasFalsePredicate(actual.X)
+	case *expr.Binary:
+		switch strings.ToUpper(actual.Op) {
+		case "AND":
+			return hasFalsePredicate(actual.X) || hasFalsePredicate(actual.Y)
+		case "=":
+			return hasUnequalLiterals(actual.X, actual.Y)
+		}
+	}
+	return false
+}
+
+func hasUnequalLiterals(leftNode, rightNode node.Node) bool {
+	left, leftOK := leftNode.(*expr.Literal)
+	if !leftOK {
+		return false
+	}
+	right, rightOK := rightNode.(*expr.Literal)
+	if !rightOK {
+		// Preserve the legacy parser shape handled by updateCriteria, where the
+		// right literal is wrapped in a binary expression.
+		if rightBinary, ok := rightNode.(*expr.Binary); ok {
+			right, rightOK = rightBinary.X.(*expr.Literal)
+		}
+	}
+	return rightOK && left.Value != right.Value
 }
 
 func (s *Statement) buildRangeFilter(exprValues []interface{}, name string) (*rangeBinFilter, error) {

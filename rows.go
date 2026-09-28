@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"time"
 	"unsafe"
 
 	as "github.com/aerospike/aerospike-client-go/v6"
@@ -165,7 +166,22 @@ func toDriverValue(v interface{}) interface{} {
 	}
 	// Dereference common pointer types to underlying values for driver
 	switch actual := v.(type) {
+	case *time.Time:
+		if actual == nil {
+			return nil
+		}
+		return *actual
 	case *int:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *int8:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *int16:
 		if actual == nil {
 			return nil
 		}
@@ -176,6 +192,31 @@ func toDriverValue(v interface{}) interface{} {
 		}
 		return *actual
 	case *int64:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *uint:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *uint8:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *uint16:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *uint32:
+		if actual == nil {
+			return nil
+		}
+		return *actual
+	case *uint64:
 		if actual == nil {
 			return nil
 		}
