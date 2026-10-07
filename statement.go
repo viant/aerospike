@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"runtime"
 	"strings"
 
 	as "github.com/aerospike/aerospike-client-go/v6"
@@ -84,7 +85,19 @@ func (s *Statement) Exec(args []driver.Value) (driver.Result, error) {
 }
 
 // ExecContext executes statements
-func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+func (s *Statement) ExecContext(ctx context.Context, args []driver.NamedValue) (output driver.Result, err error) {
+	// Runtime faults must return through database/sql, which releases transaction
+	// statement locks only after the driver returns. Recovering above that layer
+	// leaves rollback blocked. Preserve the runtime cause and never retry here.
+	defer func() {
+		if value := recover(); value != nil {
+			if fault, ok := value.(runtime.Error); ok {
+				output, err = nil, fmt.Errorf("aerospike statement execution: %w", fault)
+				return
+			}
+			panic(value)
+		}
+	}()
 	ret := &result{totalRows: s.affected}
 	switch s.kind {
 	case sqlparser.KindRegisterSet:
