@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strings"
 
@@ -248,12 +249,24 @@ func (s *Statement) setRecordType(aSet *set) error {
 	return nil
 }
 func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedValue, includeFilter bool) error {
+	// Criteria belong to one execution of a prepared statement.
+	s.falsePredicate = false
+	s.pkValues, s.mapKeyValues, s.arrayIndexValues, s.secondaryIndexValues = nil, nil, nil, nil
+	s.filter, s.mapRangeFilter, s.arrayRangeFilter = nil, nil, nil
 	if qualify == nil {
 		return nil
 	}
-	binary, ok := qualify.X.(*expr.Binary)
-	if !ok {
-		return fmt.Errorf("unsupported expr type: %T", qualify.X)
+	predicates, impossible, err := criteriaPredicates(qualify.X)
+	if err != nil {
+		return err
+	}
+	s.falsePredicate = impossible
+	if impossible || len(predicates) == 0 {
+		return nil
+	}
+	binary := predicates[0]
+	for _, predicate := range predicates[1:] {
+		binary = &expr.Binary{X: binary, Op: "AND", Y: predicate}
 	}
 	pkName := "-"
 	if s.mapper != nil && len(s.mapper.pk) == 1 {
@@ -276,21 +289,13 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 	isMultiInPk := len(s.mapper.pk) > 1
 	isMultiInKey := len(s.mapper.mapKey) > 1
 	isSecondaryIndexKey := s.mapper.secondaryIndex != nil
-	if hasFalsePredicate(binary) {
-		s.falsePredicate = true
-		return nil
-	}
 	idx := 0
-	err := binary.Walk(func(ident node.Node, values *expr.Values, operator, parentOperator string) error {
+	err = binary.Walk(func(ident node.Node, values *expr.Values, operator, parentOperator string) error {
 		if parentOperator != "" && strings.ToUpper(parentOperator) != "AND" {
 			return fmt.Errorf("unuspported logical operator: %s", parentOperator)
 		}
-		// Constant predicates have no identifier or bound values. Datly adds
-		// `1 = 0` while discovering a query schema, and it can be nested under
-		// AND with regular predicates. A false constant is handled above; a true
-		// constant does not constrain an Aerospike query and can be ignored.
-		if ident == nil || values == nil {
-			return nil
+		if values == nil {
+			return fmt.Errorf("unsupported criteria expression: %s", fmt.Sprintf("%T", ident))
 		}
 		values.Idx = idx
 		name := strings.ToLower(sqlparser.Stringify(ident))
@@ -399,37 +404,6 @@ func (s *Statement) updateCriteria(qualify *expr.Qualify, args []driver.NamedVal
 		return err
 	}
 	return nil
-}
-
-func hasFalsePredicate(expression node.Node) bool {
-	switch actual := expression.(type) {
-	case *expr.Parenthesis:
-		return hasFalsePredicate(actual.X)
-	case *expr.Binary:
-		switch strings.ToUpper(actual.Op) {
-		case "AND":
-			return hasFalsePredicate(actual.X) || hasFalsePredicate(actual.Y)
-		case "=":
-			return hasUnequalLiterals(actual.X, actual.Y)
-		}
-	}
-	return false
-}
-
-func hasUnequalLiterals(leftNode, rightNode node.Node) bool {
-	left, leftOK := leftNode.(*expr.Literal)
-	if !leftOK {
-		return false
-	}
-	right, rightOK := rightNode.(*expr.Literal)
-	if !rightOK {
-		// Preserve the legacy parser shape handled by updateCriteria, where the
-		// right literal is wrapped in a binary expression.
-		if rightBinary, ok := rightNode.(*expr.Binary); ok {
-			right, rightOK = rightBinary.X.(*expr.Literal)
-		}
-	}
-	return rightOK && left.Value != right.Value
 }
 
 func (s *Statement) buildRangeFilter(exprValues []interface{}, name string) (*rangeBinFilter, error) {
@@ -589,4 +563,48 @@ func (s *Statement) writePolicy(aSet *set, sendKey bool) *as.WritePolicy {
 	writePolicy.SendKey = sendKey
 	writePolicy.MaxRetries = 0
 	return &writePolicy
+}
+
+func criteriaPredicates(n node.Node) ([]*expr.Binary, bool, error) {
+	n = unwrapQualify(n)
+	b, ok := n.(*expr.Binary)
+	if !ok {
+		return nil, false, fmt.Errorf("unsupported criteria expression: %T", n)
+	}
+	// Older parser releases attach logical operators to a comparison RHS.
+	if right, ok := b.Y.(*expr.Binary); ok && !strings.EqualFold(b.Op, "AND") && !strings.EqualFold(b.Op, "OR") && (strings.EqualFold(right.Op, "AND") || strings.EqualFold(right.Op, "OR")) {
+		b = &expr.Binary{X: &expr.Binary{X: b.X, Op: b.Op, Y: right.X}, Op: right.Op, Y: right.Y}
+	}
+	b = b.Normalize()
+	switch strings.ToUpper(b.Op) {
+	case "AND":
+		left, lf, err := criteriaPredicates(b.X)
+		if err != nil {
+			return nil, false, err
+		}
+		right, rf, err := criteriaPredicates(b.Y)
+		if err != nil {
+			return nil, false, err
+		}
+		return append(left, right...), lf || rf, nil
+	case "OR":
+		return nil, false, fmt.Errorf("unsupported logical operator: OR")
+	}
+	left, lok := b.X.(*expr.Literal)
+	right, rok := b.Y.(*expr.Literal)
+	if lok && rok {
+		if b.Op != "=" || (left.Kind != "int" && left.Kind != "numeric") || (right.Kind != "int" && right.Kind != "numeric") {
+			return nil, false, fmt.Errorf("unsupported constant predicate: %s", sqlparser.Stringify(b))
+		}
+		l, ok := new(big.Rat).SetString(left.Value)
+		if !ok {
+			return nil, false, fmt.Errorf("invalid integer predicate")
+		}
+		r, ok := new(big.Rat).SetString(right.Value)
+		if !ok {
+			return nil, false, fmt.Errorf("invalid integer predicate")
+		}
+		return nil, l.Cmp(r) != 0, nil
+	}
+	return []*expr.Binary{b}, false, nil
 }

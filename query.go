@@ -40,6 +40,13 @@ func (s *Statement) remapInnerQuery(rawExpr *expr.Raw, setName *string) error {
 		*setName = sqlparser.Stringify(innerQuery.From.X)
 		if s.query.Qualify == nil {
 			s.query.Qualify = innerQuery.Qualify
+		} else if innerQuery.Qualify != nil {
+			// A discovery false guard is safe independently of the inner predicate.
+			// Other combinations cannot be remapped by dropping the inner scope.
+			_, impossible, err := criteriaPredicates(s.query.Qualify.X)
+			if err != nil || !impossible {
+				return fmt.Errorf("nested query with inner and outer predicates is unsupported")
+			}
 		}
 		if s.query.GroupBy == nil {
 			s.query.GroupBy = innerQuery.GroupBy
@@ -50,7 +57,14 @@ func (s *Statement) remapInnerQuery(rawExpr *expr.Raw, setName *string) error {
 				item := innerQuery.List[i]
 				switch actual := innerQuery.List[i].Expr.(type) {
 				case *expr.Ident, *expr.Selector:
-					whiteList[sqlparser.Stringify(actual)] = item
+					name := sqlparser.Stringify(actual)
+					if item.Alias != "" {
+						name = item.Alias
+					}
+					if whiteList[name] != nil {
+						return fmt.Errorf("ambiguous inner column: %s", name)
+					}
+					whiteList[name] = item
 				case *expr.Literal:
 					whiteList[item.Alias] = item
 				case *expr.Call:
@@ -67,15 +81,26 @@ func (s *Statement) remapInnerQuery(rawExpr *expr.Raw, setName *string) error {
 			for i := 0; i < len(s.query.List); i++ {
 				item := s.query.List[i]
 				name := sqlparser.Stringify(item.Expr)
+				if strings.HasSuffix(name, ".*") && strings.TrimSuffix(name, ".*") != s.query.From.Alias {
+					return fmt.Errorf("unknown wildcard qualifier: %s", name)
+				}
 				if idx := strings.Index(name, "."); idx != -1 { //remve alias if needed
 					name = name[idx+1:]
+				}
+				if name == "*" {
+					updatedList = append(updatedList, innerQuery.List...)
+					continue
 				}
 				if len(whiteList) > 0 {
 					innerItem, ok := whiteList[name]
 					if !ok {
 						return fmt.Errorf("invalid outer query column: %v, in %v", name, sqlparser.Stringify(s.query))
 					}
-					updatedList = append(updatedList, innerItem)
+					projected := *innerItem
+					if item.Alias != "" {
+						projected.Alias = item.Alias
+					}
+					updatedList = append(updatedList, &projected)
 				}
 			}
 			s.query.List = updatedList
