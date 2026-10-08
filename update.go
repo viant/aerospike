@@ -3,10 +3,12 @@ package aerospike
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	as "github.com/aerospike/aerospike-client-go/v6"
 	"github.com/viant/sqlparser"
 	"github.com/viant/sqlparser/expr"
+	"math"
 	"reflect"
 )
 
@@ -103,6 +105,10 @@ func (s *Statement) handleUpdate(ctx context.Context, args []driver.NamedValue) 
 	if err := s.updateCriteria(s.update.Qualify, args, false); err != nil {
 		return err
 	}
+	if s.falsePredicate {
+		s.affected = 0
+		return nil
+	}
 
 	if s.collectionType.IsMap() {
 		if len(s.mapKeyValues) != 1 {
@@ -173,10 +179,82 @@ func (s *Statement) handleUpdate(ctx context.Context, args []driver.NamedValue) 
 	}
 
 	writePolicy := s.writePolicy(aSet, false)
+	writePolicy.FilterExpression = s.writeFilter
 	for _, key := range keys {
 		if _, err = s.operateWithCtx(ctx, writePolicy, key, operates); err != nil {
+			if errors.Is(err, as.ErrFilteredOut) {
+				s.affected = 0
+				return nil
+			}
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *Statement) appendWriteEquality(name string, value interface{}) error {
+	field := s.mapper.getField(name)
+	if field == nil {
+		return fmt.Errorf("unsupported criteria: %s", name)
+	}
+	actual, err := field.ensureValidValueType(value)
+	if err != nil {
+		return err
+	}
+	for actual != nil {
+		reflected := reflect.ValueOf(actual)
+		if reflected.Kind() != reflect.Ptr {
+			break
+		}
+		if reflected.IsNil() {
+			actual = nil
+			break
+		}
+		actual = reflected.Elem().Interface()
+	}
+	var expression *as.Expression
+	switch typed := actual.(type) {
+	case bool:
+		expression = as.ExpEq(as.ExpBoolBin(field.Column()), as.ExpBoolVal(typed))
+	case string:
+		expression = as.ExpEq(as.ExpStringBin(field.Column()), as.ExpStringVal(typed))
+	case int:
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case int8:
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case int16:
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case int32:
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case int64:
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(typed))
+	case uint:
+		if uint64(typed) > math.MaxInt64 {
+			return fmt.Errorf("matched criteria %s value %d exceeds Aerospike integer range", name, typed)
+		}
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case uint8:
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case uint16:
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case uint32:
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case uint64:
+		if typed > math.MaxInt64 {
+			return fmt.Errorf("matched criteria %s value %d exceeds Aerospike integer range", name, typed)
+		}
+		expression = as.ExpEq(as.ExpIntBin(field.Column()), as.ExpIntVal(int64(typed)))
+	case float32:
+		expression = as.ExpEq(as.ExpFloatBin(field.Column()), as.ExpFloatVal(float64(typed)))
+	case float64:
+		expression = as.ExpEq(as.ExpFloatBin(field.Column()), as.ExpFloatVal(typed))
+	default:
+		return fmt.Errorf("unsupported matched criteria %s type %T", name, actual)
+	}
+	if s.writeFilter == nil {
+		s.writeFilter = expression
+	} else {
+		s.writeFilter = as.ExpAnd(s.writeFilter, expression)
 	}
 	return nil
 }
